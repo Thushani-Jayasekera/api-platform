@@ -627,15 +627,21 @@ func (c *Client) handleAPIUndeployedEvent(event map[string]interface{}) {
 
 // handleAPIKeyCreatedEvent handles API key created events from platform-api
 func (c *Client) handleAPIKeyCreatedEvent(event map[string]interface{}) {
-	c.logger.Info("API Key Created Event received",
+	baseLogger := c.logger
+	if baseLogger == nil {
+		baseLogger = slog.Default()
+	}
+	logger := baseLogger.With(
+		slog.Any("correlation_id", event["correlationId"]),
+	)
+	logger.Info("API Key Created Event received",
 		slog.Any("timestamp", event["timestamp"]),
-		slog.Any("correlationId", event["correlationId"]),
 	)
 
 	// Parse the event into structured format
 	eventBytes, err := json.Marshal(event)
 	if err != nil {
-		c.logger.Error("Failed to marshal event for parsing",
+		logger.Error("Failed to marshal event for parsing",
 			slog.Any("error", err),
 		)
 		return
@@ -643,7 +649,7 @@ func (c *Client) handleAPIKeyCreatedEvent(event map[string]interface{}) {
 
 	var keyCreatedEvent APIKeyCreatedEvent
 	if err := json.Unmarshal(eventBytes, &keyCreatedEvent); err != nil {
-		c.logger.Error("Failed to parse API key created event",
+		logger.Error("Failed to parse API key created event",
 			slog.Any("error", err),
 		)
 		return
@@ -651,25 +657,19 @@ func (c *Client) handleAPIKeyCreatedEvent(event map[string]interface{}) {
 
 	payload := keyCreatedEvent.Payload
 	if payload.ApiId == "" {
-		c.logger.Error("API ID is empty in API key created event")
+		logger.Error("API ID is empty in API key created event")
 		return
 	}
 	if payload.KeyName == "" {
-		c.logger.Error("Key name is empty in API key created event")
+		logger.Error("Key name is empty in API key created event")
 		return
 	}
 	if payload.ApiKey == "" {
-		c.logger.Error("API key is empty in API key created event")
+		logger.Error("API key is empty in API key created event")
 		return
 	}
 
-	baseLogger := c.logger
-	if baseLogger == nil {
-		baseLogger = slog.Default()
-	}
-	// Create logger with pre-attached correlation ID and common fields
-	logger := baseLogger.With(
-		slog.String("correlation_id", keyCreatedEvent.CorrelationID),
+	logger = logger.With(
 		slog.String("api_id", payload.ApiId),
 		slog.String("api_key_name", payload.KeyName),
 	)
@@ -709,15 +709,21 @@ func (c *Client) handleAPIKeyCreatedEvent(event map[string]interface{}) {
 
 // handleAPIKeyRevokedEvent handles API key revoked events from platform-api
 func (c *Client) handleAPIKeyRevokedEvent(event map[string]interface{}) {
-	c.logger.Info("API Key Revoked Event",
+	baseLogger := c.logger
+	if baseLogger == nil {
+		baseLogger = slog.Default()
+	}
+	logger := baseLogger.With(
+		slog.Any("correlation_id", event["correlationId"]),
+	)
+	logger.Info("API Key Revoked Event received",
 		slog.Any("timestamp", event["timestamp"]),
-		slog.Any("correlationId", event["correlationId"]),
 	)
 
 	// Parse the event into structured format
 	eventBytes, err := json.Marshal(event)
 	if err != nil {
-		c.logger.Error("Failed to marshal event for parsing",
+		logger.Error("Failed to marshal event for parsing",
 			slog.Any("error", err),
 		)
 		return
@@ -725,7 +731,7 @@ func (c *Client) handleAPIKeyRevokedEvent(event map[string]interface{}) {
 
 	var keyRevokedEvent APIKeyRevokedEvent
 	if err := json.Unmarshal(eventBytes, &keyRevokedEvent); err != nil {
-		c.logger.Error("Failed to parse API key revoked event",
+		logger.Error("Failed to parse API key revoked event",
 			slog.Any("error", err),
 		)
 		return
@@ -733,25 +739,18 @@ func (c *Client) handleAPIKeyRevokedEvent(event map[string]interface{}) {
 
 	payload := keyRevokedEvent.Payload
 	if payload.ApiId == "" {
-		c.logger.Error("API ID is empty in API key revoked event")
+		logger.Error("API ID is empty in API key revoked event")
 		return
 	}
 	if payload.KeyName == "" {
-		c.logger.Error("Key name is empty in API key revoked event")
+		logger.Error("Key name is empty in API key revoked event")
 		return
 	}
 
-	baseLogger := c.logger
-	if baseLogger == nil {
-		baseLogger = slog.Default()
-	}
-	// Create logger with pre-attached correlation ID and common fields
-	logger := baseLogger.With(
-		slog.String("correlation_id", keyRevokedEvent.CorrelationID),
+	logger = logger.With(
 		slog.String("api_id", payload.ApiId),
 		slog.String("api_key_name", payload.KeyName),
 	)
-
 	logger.Info("Processing API key revocation")
 
 	err = c.apiKeyService.RevokeExternalAPIKeyFromEvent(
@@ -769,14 +768,20 @@ func (c *Client) handleAPIKeyRevokedEvent(event map[string]interface{}) {
 
 // handleAPIKeyUpdatedEvent handles API key updated events from platform-api
 func (c *Client) handleAPIKeyUpdatedEvent(event map[string]interface{}) {
-	c.logger.Info("API Key Updated Event recieved",
+	baseLogger := c.logger
+	if baseLogger == nil {
+		baseLogger = slog.Default()
+	}
+	logger := baseLogger.With(
+		slog.Any("correlation_id", event["correlationId"]),
+	)
+	logger.Info("API Key Updated Event received",
 		slog.Any("timestamp", event["timestamp"]),
-		slog.Any("correlationId", event["correlationId"]),
 	)
 	// Parse the event into structured format
 	eventBytes, err := json.Marshal(event)
 	if err != nil {
-		c.logger.Error("Failed to marshal event for parsing",
+		logger.Error("Failed to marshal event for parsing",
 			slog.Any("error", err),
 		)
 		return
@@ -784,7 +789,7 @@ func (c *Client) handleAPIKeyUpdatedEvent(event map[string]interface{}) {
 
 	var keyUpdatedEvent APIKeyUpdatedEvent
 	if err := json.Unmarshal(eventBytes, &keyUpdatedEvent); err != nil {
-		c.logger.Error("Failed to parse API key updated event",
+		logger.Error("Failed to parse API key updated event",
 			slog.Any("error", err),
 		)
 		return
@@ -792,11 +797,11 @@ func (c *Client) handleAPIKeyUpdatedEvent(event map[string]interface{}) {
 
 	payload := keyUpdatedEvent.Payload
 	if payload.ApiId == "" {
-		c.logger.Error("API ID is empty in API key updated event")
+		logger.Error("API ID is empty in API key updated event")
 		return
 	}
 	if payload.KeyName == "" {
-		c.logger.Error("Key name is empty in API key updated event")
+		logger.Error("Key name is empty in API key updated event")
 		return
 	}
 	if payload.ApiKey == "" {
@@ -804,17 +809,11 @@ func (c *Client) handleAPIKeyUpdatedEvent(event map[string]interface{}) {
 		return
 	}
 
-	baseLogger := c.logger
-	if baseLogger == nil {
-		baseLogger = slog.Default()
-	}
 	// Create logger with pre-attached correlation ID and common fields
-	logger := baseLogger.With(
-		slog.String("correlation_id", keyUpdatedEvent.CorrelationID),
+	logger = logger.With(
 		slog.String("api_id", payload.ApiId),
 		slog.String("api_key_name", payload.KeyName),
 	)
-
 	logger.Info("Processing API key update")
 
 	// Parse expiration time if provided
