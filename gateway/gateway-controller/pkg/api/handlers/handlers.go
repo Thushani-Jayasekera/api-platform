@@ -2503,22 +2503,52 @@ func (s *APIServer) UpdateAPIKey(c *gin.Context, id string, apiKeyName string) {
 		return // Error response already sent by extractAuthenticatedUser
 	}
 
-	log.Debug("Starting API key rotation",
+	log.Debug("Starting API key update",
 		slog.String("handle", handle),
-		slog.String("key name", apiKeyName),
+		slog.String("key_name", apiKeyName),
 		slog.String("user", user.UserID),
 		slog.String("correlation_id", correlationID))
 
 	// Parse and validate request body
-	var request api.APIKeyRegenerationRequest
+	var request api.APIKeyUpdateRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		log.Warn("Invalid request body for API key rotation",
+		log.Warn("Invalid request body for API key update",
 			slog.Any("error", err),
 			slog.String("handle", handle),
 			slog.String("correlation_id", correlationID))
 		c.JSON(http.StatusBadRequest, api.ErrorResponse{
 			Status:  "error",
 			Message: fmt.Sprintf("Invalid request body: %v", err),
+		})
+		return
+	}
+
+	// Validate API key value is provided (check nil first)
+	if request.ApiKey == nil || *request.ApiKey == "" {
+		log.Warn("API key value is missing or empty in update request",
+			slog.String("handle", handle),
+			slog.String("key_name", apiKeyName),
+			slog.Bool("is_nil", request.ApiKey == nil),
+			slog.String("correlation_id", correlationID))
+		c.JSON(http.StatusBadRequest, api.ErrorResponse{
+			Status:  "error",
+			Message: "API key value is required",
+		})
+		return
+	}
+
+	// Validate API key minimum length (16 characters as per OpenAPI spec)
+	const minAPIKeyLength = 16
+	if len(*request.ApiKey) < minAPIKeyLength {
+		log.Warn("API key value is too short in update request",
+			slog.String("handle", handle),
+			slog.String("key_name", apiKeyName),
+			slog.Int("provided_length", len(*request.ApiKey)),
+			slog.Int("minimum_length", minAPIKeyLength),
+			slog.String("correlation_id", correlationID))
+		c.JSON(http.StatusBadRequest, api.ErrorResponse{
+			Status:  "error",
+			Message: fmt.Sprintf("API key must be at least %d characters long", minAPIKeyLength),
 		})
 		return
 	}
@@ -2550,7 +2580,7 @@ func (s *APIServer) UpdateAPIKey(c *gin.Context, id string, apiKeyName string) {
 		return
 	}
 
-	log.Info("API key rotation completed",
+	log.Info("API key updated successfully",
 		slog.String("handle", handle),
 		slog.String("key_name", apiKeyName),
 		slog.String("user", user.UserID),

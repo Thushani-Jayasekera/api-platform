@@ -208,86 +208,64 @@ func (s *GatewayEventsService) BroadcastUndeploymentEvent(gatewayID string, unde
 	return nil
 }
 
-// BroadcastAPIKeyCreatedEvent sends an API key created event to target gateway with retries.
+// BroadcastAPIKeyCreatedEvent sends an API key created event to target gateway.
 // This method handles:
 // - Looking up gateway connections by gateway ID
 // - Serializing event to JSON
 // - Broadcasting to all connections for the gateway (clustering support)
-// - Current API key events are not retried
+// - Single attempt delivery (no automatic retries - caller should handle retry logic if needed)
 // - Payload size validation
 // - Delivery statistics tracking
 func (s *GatewayEventsService) BroadcastAPIKeyCreatedEvent(gatewayID string, event *model.APIKeyCreatedEvent) error {
-	const maxRetries = 1
-	const retryDelay = 1 * time.Second
+	const maxAttempts = 1
 
 	var lastError error
 
-	// Retry loop for critical API key events
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			log.Printf("[INFO] Retrying API key created event broadcast: gatewayID=%s attempt=%d/%d",
-				gatewayID, attempt+1, maxRetries)
-			time.Sleep(retryDelay * time.Duration(attempt)) // Linear backoff
-		}
-
+	// Single attempt delivery for API key events
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		err := s.broadcastAPIKeyCreated(gatewayID, event)
 		if err == nil {
-			if attempt > 0 {
-				log.Printf("[INFO] API key created event delivered after retry: gatewayID=%s attempts=%d",
-					gatewayID, attempt+1)
-			}
 			return nil
 		}
 
 		lastError = err
-		log.Printf("[WARN] API key created event delivery failed: gatewayID=%s attempt=%d/%d error=%v",
-			gatewayID, attempt+1, maxRetries, err)
+		log.Printf("[WARN] API key created event delivery failed: gatewayID=%s error=%v",
+			gatewayID, err)
 	}
 
-	log.Printf("[ERROR] API key created event delivery failed after all retries: gatewayID=%s retries=%d error=%v",
-		gatewayID, maxRetries, lastError)
-	return fmt.Errorf("failed to deliver API key created event after %d retries: %w", maxRetries, lastError)
+	log.Printf("[ERROR] API key created event delivery failed: gatewayID=%s error=%v",
+		gatewayID, lastError)
+	return fmt.Errorf("failed to deliver API key created event: %w", lastError)
 }
 
-// BroadcastAPIKeyRevokedEvent sends an API key revoked event to target gateway with retries.
+// BroadcastAPIKeyRevokedEvent sends an API key revoked event to target gateway.
 // This method handles:
 // - Looking up gateway connections by gateway ID
 // - Serializing event to JSON
 // - Broadcasting to all connections for the gateway (clustering support)
-// - Current API key events are not retried
+// - Single attempt delivery (no automatic retries - caller should handle retry logic if needed)
 // - Payload size validation
 // - Delivery statistics tracking
 func (s *GatewayEventsService) BroadcastAPIKeyRevokedEvent(gatewayID string, event *model.APIKeyRevokedEvent) error {
-	const maxRetries = 1
-	const retryDelay = 1 * time.Second
+	const maxAttempts = 1
 
 	var lastError error
 
-	// Retry loop for critical API key events
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			log.Printf("[INFO] Retrying API key revoked event broadcast: gatewayID=%s attempt=%d/%d",
-				gatewayID, attempt+1, maxRetries)
-			time.Sleep(retryDelay * time.Duration(attempt)) // Linear backoff
-		}
-
+	// Single attempt delivery for API key events
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		err := s.broadcastAPIKeyRevoked(gatewayID, event)
 		if err == nil {
-			if attempt > 0 {
-				log.Printf("[INFO] API key revoked event delivered after retry: gatewayID=%s attempts=%d",
-					gatewayID, attempt+1)
-			}
 			return nil
 		}
 
 		lastError = err
-		log.Printf("[WARN] API key revoked event delivery failed: gatewayID=%s attempt=%d/%d error=%v",
-			gatewayID, attempt+1, maxRetries, err)
+		log.Printf("[WARN] API key revoked event delivery failed: gatewayID=%s error=%v",
+			gatewayID, err)
 	}
 
-	log.Printf("[ERROR] API key revoked event delivery failed after all retries: gatewayID=%s retries=%d error=%v",
-		gatewayID, maxRetries, lastError)
-	return fmt.Errorf("failed to deliver API key revoked event after %d retries: %w", maxRetries, lastError)
+	log.Printf("[ERROR] API key revoked event delivery failed: gatewayID=%s error=%v",
+		gatewayID, lastError)
+	return fmt.Errorf("failed to deliver API key revoked event: %w", lastError)
 }
 
 // broadcastAPIKeyCreated is the internal implementation for broadcasting API key created events
@@ -440,45 +418,34 @@ func (s *GatewayEventsService) broadcastAPIKeyRevoked(gatewayID string, event *m
 	return nil
 }
 
-// BroadcastAPIKeyUpdatedEvent sends an API key updated event to target gateway with retries.
+// BroadcastAPIKeyUpdatedEvent sends an API key updated event to target gateway.
 // This method handles:
 // - Looking up gateway connections by gateway ID
 // - Serializing event to JSON
 // - Broadcasting to all connections for the gateway (clustering support)
-// - Current API key events are not retried
+// - Single attempt delivery (no automatic retries - caller should handle retry logic if needed)
 // - Payload size validation
 // - Delivery statistics tracking
 func (s *GatewayEventsService) BroadcastAPIKeyUpdatedEvent(gatewayID string, event *model.APIKeyUpdatedEvent) error {
-	const maxRetries = 1
-	const retryDelay = 1 * time.Second
+	const maxAttempts = 1
 
 	var lastError error
 
-	// Retry loop for critical API key events
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			log.Printf("[INFO] Retrying API key updated event broadcast: gatewayID=%s attempt=%d/%d",
-				gatewayID, attempt+1, maxRetries)
-			time.Sleep(retryDelay * time.Duration(attempt)) // Linear backoff
-		}
-
+	// Single attempt delivery for API key events
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		err := s.broadcastAPIKeyUpdated(gatewayID, event)
 		if err == nil {
-			if attempt > 0 {
-				log.Printf("[INFO] API key updated event delivered after retry: gatewayID=%s attempts=%d",
-					gatewayID, attempt+1)
-			}
 			return nil
 		}
 
 		lastError = err
-		log.Printf("[WARN] API key updated event delivery failed: gatewayID=%s attempt=%d/%d error=%v",
-			gatewayID, attempt+1, maxRetries, err)
+		log.Printf("[WARN] API key updated event delivery failed: gatewayID=%s error=%v",
+			gatewayID, err)
 	}
 
-	log.Printf("[ERROR] API key updated event delivery failed after all retries: gatewayID=%s retries=%d error=%v",
-		gatewayID, maxRetries, lastError)
-	return fmt.Errorf("failed to deliver API key updated event after %d retries: %w", maxRetries, lastError)
+	log.Printf("[ERROR] API key updated event delivery failed: gatewayID=%s error=%v",
+		gatewayID, lastError)
+	return fmt.Errorf("failed to deliver API key update event: %w", lastError)
 }
 
 // broadcastAPIKeyUpdated is the internal implementation for broadcasting API key updated events

@@ -534,10 +534,10 @@ paths:
         content:
           application/yaml:
             schema:
-              $ref: "#/components/schemas/APIKeyRegenerationRequest"
+              $ref: "#/components/schemas/APIKeyUpdateRequest"
           application/json:
             schema:
-              $ref: "#/components/schemas/APIKeyRegenerationRequest"
+              $ref: "#/components/schemas/APIKeyUpdateRequest"
       responses:
         '200':
           description: API key updated successfully
@@ -2454,6 +2454,11 @@ components:
           format: date-time
           description: Expiration timestamp
           example: "2026-12-08T10:30:00Z"
+    APIKeyUpdateRequest:
+      allOf:
+        - $ref: "#/components/schemas/APIKeyRegenerationRequest"
+      required:
+        - api_key
     APIKeyRevocationResponse:
       type: object
       properties:
