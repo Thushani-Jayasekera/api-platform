@@ -141,6 +141,7 @@ func (h *APIKeyOperationHandler) handleStoreOperation(operation policyenginev1.A
 		UpdatedAt:  operation.APIKey.UpdatedAt,
 		ExpiresAt:  operation.APIKey.ExpiresAt,
 		Source:     operation.APIKey.Source,
+		IndexKey:   operation.APIKey.IndexKey,
 	}
 
 	// Store the API key
@@ -220,6 +221,7 @@ func (h *APIKeyOperationHandler) replaceAllAPIKeys(apiKeyDataList []APIKeyData) 
 			UpdatedAt:  apiKeyData.UpdatedAt,
 			ExpiresAt:  apiKeyData.ExpiresAt,
 			Source:     apiKeyData.Source,
+			IndexKey:   apiKeyData.IndexKey,
 		}
 
 		// Store the API key
@@ -258,5 +260,6 @@ type APIKeyData struct {
 	CreatedBy  string     `json:"createdBy"`
 	UpdatedAt  time.Time  `json:"updatedAt"`
 	ExpiresAt  *time.Time `json:"expiresAt"`
-	Source     string     `json:"source"` // "local" | "external"
+	Source     string     `json:"source"`   // "local" | "external"
+	IndexKey   string     `json:"indexKey"` // Pre-computed SHA-256 hash for O(1) lookup (external plain text keys only)
 }

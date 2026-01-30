@@ -522,17 +522,25 @@ func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateRe
 
 	// Validate request parameters
 	const minAPIKeyLength = 16
-	if params.Request.ApiKey == nil || *params.Request.ApiKey == "" {
+	if params.Request.ApiKey == nil {
 		logger.Warn("API key value is missing or empty",
-			slog.Bool("is_nil", params.Request.ApiKey == nil))
+			slog.Bool("is_nil", true))
 		return nil, fmt.Errorf("API key value cannot be empty")
 	}
 
-	if len(*params.Request.ApiKey) < minAPIKeyLength {
+	// Trim whitespace from API key
+	trimmedKey := strings.TrimSpace(*params.Request.ApiKey)
+	if trimmedKey == "" {
+		logger.Warn("API key value is missing or empty",
+			slog.Bool("is_nil", false))
+		return nil, fmt.Errorf("API key value cannot be empty")
+	}
+
+	if len(trimmedKey) < minAPIKeyLength {
 		logger.Warn("API key value is too short",
-			slog.Int("provided_length", len(*params.Request.ApiKey)),
+			slog.Int("provided_length", len(trimmedKey)),
 			slog.Int("minimum_length", minAPIKeyLength))
-		return nil, fmt.Errorf("API key must be at least %d characters long, got %d", minAPIKeyLength, len(*params.Request.ApiKey))
+		return nil, fmt.Errorf("API key must be at least %d characters long, got %d", minAPIKeyLength, len(trimmedKey))
 	}
 
 	// Get the API configuration
@@ -559,7 +567,7 @@ func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateRe
 	}
 
 	// Hash the provided API key
-	hashedAPIKey, err := s.hashAPIKey(*params.Request.ApiKey)
+	hashedAPIKey, err := s.hashAPIKey(trimmedKey)
 	if err != nil {
 		logger.Error("Failed to hash API key",
 			slog.Any("error", err))
@@ -567,7 +575,7 @@ func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateRe
 	}
 
 	// Generate masked API key for display
-	maskedAPIKey := s.MaskAPIKey(*params.Request.ApiKey)
+	maskedAPIKey := s.MaskAPIKey(trimmedKey)
 
 	// Calculate expiration time
 	now := time.Now()
@@ -643,6 +651,22 @@ func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateRe
 			expiresAt.Format(time.RFC3339), now.Format(time.RFC3339))
 	}
 
+	// Capture previous state for potential rollback
+	var previousKey *models.APIKey
+	if s.db != nil {
+		previousKey = &models.APIKey{
+			ID:           existingKey.ID,
+			APIKey:       existingKey.APIKey,
+			MaskedAPIKey: existingKey.MaskedAPIKey,
+			Status:       existingKey.Status,
+			CreatedAt:    existingKey.CreatedAt,
+			UpdatedAt:    existingKey.UpdatedAt,
+			ExpiresAt:    existingKey.ExpiresAt,
+			Unit:         existingKey.Unit,
+			Duration:     existingKey.Duration,
+		}
+	}
+
 	// Update the existing key
 	existingKey.APIKey = hashedAPIKey
 	existingKey.MaskedAPIKey = maskedAPIKey
@@ -665,6 +689,18 @@ func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateRe
 	if err := s.store.StoreAPIKey(existingKey); err != nil {
 		logger.Error("Failed to update API key in ConfigStore",
 			slog.Any("error", err))
+
+		// Rollback database update if we have a persistent DB
+		if s.db != nil {
+			if rollbackErr := s.db.UpdateAPIKey(previousKey); rollbackErr != nil {
+				logger.Error("Failed to rollback API key in database after ConfigStore failure",
+					slog.Any("error", rollbackErr),
+					slog.Any("original_error", err))
+			} else {
+				logger.Info("Successfully rolled back API key in database after ConfigStore failure")
+			}
+		}
+
 		return nil, fmt.Errorf("failed to update API key in ConfigStore: %w", err)
 	}
 
@@ -700,7 +736,7 @@ func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateRe
 			Message: "API key updated successfully",
 			ApiKey: &api.APIKey{
 				Name:       existingKey.Name,
-				ApiKey:     nil, // Don't return the key value for updates
+				ApiKey:     &maskedAPIKey, // Return the masked API key for updates
 				ApiId:      params.Handle,
 				Operations: existingKey.Operations,
 				Status:     api.APIKeyStatus(existingKey.Status),
@@ -1966,6 +2002,10 @@ func (s *APIKeyService) CreateExternalAPIKeyFromEvent(
 		return fmt.Errorf("API key is too short (minimum 16 characters required)")
 	}
 
+	if expiresAt != nil && expiresAt.Before(time.Now()) {
+		return fmt.Errorf("API key expiration time must be in the future, got: %s", expiresAt.Format(time.RFC3339))
+	}
+
 	// Check if API exists
 	config, err := s.store.Get(apiId)
 	if err != nil {
@@ -2271,6 +2311,9 @@ func (s *APIKeyService) UpdateExternalAPIKeyFromEvent(
 	// Validate API key length
 	if len(plainAPIKey) < 16 {
 		return fmt.Errorf("API key is too short (minimum 16 characters required)")
+	}
+	if expiresAt != nil && expiresAt.Before(time.Now()) {
+		return fmt.Errorf("API key expiration time must be in the future, got: %s", expiresAt.Format(time.RFC3339))
 	}
 
 	// Check if API exists

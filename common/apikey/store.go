@@ -57,6 +57,8 @@ type APIKey struct {
 	ExpiresAt *time.Time `json:"expires_at" yaml:"expires_at"`
 	// Source tracking for external key support ("local" | "external")
 	Source string `json:"source" yaml:"source"`
+	// IndexKey Pre-computed hash for O(1) lookup (external plain text keys only)
+	IndexKey string `json:"index_key" yaml:"index_key"`
 }
 
 // APIKeyStatus Status of the API key
@@ -151,6 +153,18 @@ func (aks *APIkeyStore) StoreAPIKey(apiId string, apiKey *APIKey) error {
 	}
 
 	if existingKeyID != "" {
+		// Remove old external key index entry if it exists
+		oldKey := aks.apiKeysByAPI[apiId][existingKeyID]
+		if oldKey != nil && effectiveSource(oldKey.Source) == "external" && !isHashedKey(oldKey.APIKey) {
+			var oldIndexKey string
+			if oldKey.IndexKey != "" {
+				oldIndexKey = oldKey.IndexKey
+			} else {
+				oldIndexKey = computeExternalKeyIndexKey(apiId, oldKey.APIKey)
+			}
+			delete(aks.externalKeyIndex, oldIndexKey)
+		}
+
 		// Update the existing entry in apiKeysByAPI
 		aks.apiKeysByAPI[apiId][existingKeyID] = apiKey
 	} else {
@@ -167,6 +181,21 @@ func (aks *APIkeyStore) StoreAPIKey(apiId string, apiKey *APIKey) error {
 
 		// Store by API key value
 		aks.apiKeysByAPI[apiId][apiKey.ID] = apiKey
+	}
+
+	// For external keys with plain text (not hashed), add to fast lookup index
+	// This enables O(1) lookup during validation instead of O(n) iteration
+	if effectiveSource(apiKey.Source) == "external" && !isHashedKey(apiKey.APIKey) {
+		var indexKey string
+		if apiKey.IndexKey != "" {
+			// Use pre-computed index key from database (avoids re-hashing on restart)
+			indexKey = apiKey.IndexKey
+		} else {
+			// Compute index key (backward compatibility for keys without IndexKey)
+			indexKey = computeExternalKeyIndexKey(apiId, apiKey.APIKey)
+			apiKey.IndexKey = indexKey // Cache it for future use
+		}
+		aks.externalKeyIndex[indexKey] = apiKey.ID
 	}
 
 	return nil
@@ -191,7 +220,21 @@ func (aks *APIkeyStore) ValidateAPIKey(apiId, apiOperation, operationMethod, pro
 	}
 
 
-	// If not found via local key lookup, check all keys (handles both external keys and edge cases)
+	// If not found via local key lookup, try external key index for O(1) lookup
+	if targetAPIKey == nil {
+		// Compute the index key for external key lookup
+		indexKey := computeExternalKeyIndexKey(apiId, providedAPIKey)
+		if keyID, exists := aks.externalKeyIndex[indexKey]; exists {
+			// Found in index, retrieve the key
+			if apiKey, ok := aks.apiKeysByAPI[apiId][keyID]; ok {
+				if effectiveSource(apiKey.Source) == "external" && compareAPIKeys(providedAPIKey, apiKey.APIKey) {
+					targetAPIKey = apiKey
+				}
+			}
+		}
+	}
+
+	// If still not found, fall back to O(n) search for external keys (handles hashed external keys)
 	if targetAPIKey == nil {
 		apiKeys, exists := aks.apiKeysByAPI[apiId]
 		if exists {
@@ -270,7 +313,19 @@ func (aks *APIkeyStore) RevokeAPIKey(apiId, providedAPIKey string) error {
 		}
 	}
 
-	// If not found via local key lookup, check all keys
+	// If not found via local key lookup, try external key index for O(1) lookup
+	if matchedKey == nil {
+		indexKey := computeExternalKeyIndexKey(apiId, providedAPIKey)
+		if keyID, exists := aks.externalKeyIndex[indexKey]; exists {
+			if apiKey, ok := aks.apiKeysByAPI[apiId][keyID]; ok {
+				if effectiveSource(apiKey.Source) == "external" && compareAPIKeys(providedAPIKey, apiKey.APIKey) {
+					matchedKey = apiKey
+				}
+			}
+		}
+	}
+
+	// If still not found, fall back to O(n) search (handles hashed external keys and edge cases)
 	if matchedKey == nil {
 		apiKeys, exists := aks.apiKeysByAPI[apiId]
 		if exists {
@@ -303,9 +358,22 @@ func (aks *APIkeyStore) RemoveAPIKeysByAPI(apiId string) error {
 	aks.mu.Lock()
 	defer aks.mu.Unlock()
 
-	_, exists := aks.apiKeysByAPI[apiId]
+	apiKeys, exists := aks.apiKeysByAPI[apiId]
 	if !exists {
 		return nil // No keys to remove
+	}
+
+	// Remove from external key index
+	for _, apiKey := range apiKeys {
+		if effectiveSource(apiKey.Source) == "external" && !isHashedKey(apiKey.APIKey) {
+			var indexKey string
+			if apiKey.IndexKey != "" {
+				indexKey = apiKey.IndexKey
+			} else {
+				indexKey = computeExternalKeyIndexKey(apiId, apiKey.APIKey)
+			}
+			delete(aks.externalKeyIndex, indexKey)
+		}
 	}
 
 	// Remove from API-specific map
@@ -321,6 +389,8 @@ func (aks *APIkeyStore) ClearAll() error {
 
 	// Clear the API-specific keys map
 	aks.apiKeysByAPI = make(map[string]map[string]*APIKey)
+	// Clear the external key index
+	aks.externalKeyIndex = make(map[string]string)
 
 	return nil
 }
@@ -477,6 +547,24 @@ func parseAPIKey(value string) (ParsedAPIKey, bool) {
 	}, true
 }
 
+// computeExternalKeyIndexKey computes a SHA-256 hash of the plain-text API key for fast lookup
+// Returns the index key in format "apiId:hash_hex"
+func computeExternalKeyIndexKey(apiId, plainAPIKey string) string {
+	hasher := sha256.New()
+	hasher.Write([]byte(plainAPIKey))
+	hash := hasher.Sum(nil)
+	return fmt.Sprintf("%s:%s", apiId, hex.EncodeToString(hash))
+}
+
+// isHashedKey checks if the API key is already hashed (has a hash format prefix)
+func isHashedKey(apiKey string) bool {
+	return strings.HasPrefix(apiKey, "$sha256$") ||
+		strings.HasPrefix(apiKey, "$2a$") ||
+		strings.HasPrefix(apiKey, "$2b$") ||
+		strings.HasPrefix(apiKey, "$2y$") ||
+		strings.HasPrefix(apiKey, "$argon2id$")
+}
+
 // removeFromAPIMapping removes an API key from the API mapping
 func (aks *APIkeyStore) removeFromAPIMapping(apiKey *APIKey) {
 	apiKeys, apiIdExists := aks.apiKeysByAPI[apiKey.APIId]
@@ -486,5 +574,16 @@ func (aks *APIkeyStore) removeFromAPIMapping(apiKey *APIKey) {
 		if len(aks.apiKeysByAPI[apiKey.APIId]) == 0 {
 			delete(aks.apiKeysByAPI, apiKey.APIId)
 		}
+	}
+
+	// Remove from external key index if it's an external key
+	if effectiveSource(apiKey.Source) == "external" && !isHashedKey(apiKey.APIKey) {
+		var indexKey string
+		if apiKey.IndexKey != "" {
+			indexKey = apiKey.IndexKey
+		} else {
+			indexKey = computeExternalKeyIndexKey(apiKey.APIId, apiKey.APIKey)
+		}
+		delete(aks.externalKeyIndex, indexKey)
 	}
 }

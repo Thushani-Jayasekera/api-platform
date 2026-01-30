@@ -2386,7 +2386,7 @@ func (s *APIServer) CreateAPIKey(c *gin.Context, id string) {
 
 	// Parse and validate request body
 	var request api.APIKeyCreationRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
+	if err := s.bindRequestBody(c, &request); err != nil {
 		log.Warn("Invalid request body for API key creation",
 			slog.Any("error", err),
 			slog.String("handle", handle),
@@ -2511,7 +2511,7 @@ func (s *APIServer) UpdateAPIKey(c *gin.Context, id string, apiKeyName string) {
 
 	// Parse and validate request body
 	var request api.APIKeyUpdateRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
+	if err := s.bindRequestBody(c, &request); err != nil {
 		log.Warn("Invalid request body for API key update",
 			slog.Any("error", err),
 			slog.String("handle", handle),
@@ -2612,7 +2612,7 @@ func (s *APIServer) RegenerateAPIKey(c *gin.Context, id string, apiKeyName strin
 
 	// Parse and validate request body
 	var request api.APIKeyRegenerationRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
+	if err := s.bindRequestBody(c, &request); err != nil {
 		log.Warn("Invalid request body for API key rotation",
 			slog.Any("error", err),
 			slog.String("handle", handle),
@@ -2752,6 +2752,20 @@ func (s *APIServer) extractAuthenticatedUser(c *gin.Context, operationName strin
 		slog.String("correlation_id", correlationID))
 
 	return &user, true
+}
+
+// bindRequestBody binds the request body based on Content-Type header.
+// Supports both JSON and YAML content types.
+func (s *APIServer) bindRequestBody(c *gin.Context, request interface{}) error {
+	contentType := c.GetHeader("Content-Type")
+
+	// Check for YAML content types
+	if strings.Contains(contentType, "application/yaml") || strings.Contains(contentType, "text/yaml") {
+		return c.ShouldBindYAML(request)
+	}
+
+	// Default to JSON for application/json or when no content type is specified
+	return c.ShouldBindJSON(request)
 }
 
 // getLLMProviderTemplate extracts the template name from sourceConfig and retrieves the template.
