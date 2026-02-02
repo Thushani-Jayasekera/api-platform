@@ -88,6 +88,9 @@ var (
 
 	// ErrConflict is returned when an API Key with the same name/version or key value already exists
 	ErrConflict = errors.New("API key already exists")
+
+	// ErrInvalidInput is returned when input validation fails (e.g. external key missing IndexKey)
+	ErrInvalidInput = errors.New("invalid input")
 )
 
 // Singleton instance
@@ -128,6 +131,11 @@ func (aks *APIkeyStore) StoreAPIKey(apiId string, apiKey *APIKey) error {
 		return fmt.Errorf("API key cannot be nil")
 	}
 
+	// Require non-empty IndexKey for external keys before any writes (no replacement from hashed APIKey)
+	if apiKey.Source == "external" && strings.TrimSpace(apiKey.IndexKey) == "" {
+		return fmt.Errorf("%w: external API key requires non-empty IndexKey", ErrInvalidInput)
+	}
+
 	aks.mu.Lock()
 	defer aks.mu.Unlock()
 
@@ -145,19 +153,16 @@ func (aks *APIkeyStore) StoreAPIKey(apiId string, apiKey *APIKey) error {
 	}
 
 	if existingKeyID != "" {
-		// Remove old external key index entry if it exists
+		// Remove old external key index entry if it exists (cleanup only; use IndexKey or compute from old key)
 		oldKey := aks.apiKeysByAPI[apiId][existingKeyID]
-		if oldKey != nil && oldKey.Source == "external" {
-			var oldIndexKey string
-			if oldKey.IndexKey != "" {
-				oldIndexKey = oldKey.IndexKey
-			} else {
+		if oldKey != nil && oldKey.Source == "external" && aks.externalKeyIndex[apiId] != nil {
+			oldIndexKey := oldKey.IndexKey
+			if oldIndexKey == "" {
 				oldIndexKey = computeExternalKeyIndexKey(oldKey.APIKey)
-				if oldIndexKey == "" {
-					return fmt.Errorf("failed to compute index key")
-				}
 			}
-			delete(aks.externalKeyIndex[apiId], oldIndexKey)
+			if oldIndexKey != "" {
+				delete(aks.externalKeyIndex[apiId], oldIndexKey)
+			}
 		}
 
 		// Update the existing entry in apiKeysByAPI
@@ -178,20 +183,12 @@ func (aks *APIkeyStore) StoreAPIKey(apiId string, apiKey *APIKey) error {
 		aks.apiKeysByAPI[apiId][apiKey.ID] = apiKey
 	}
 
-	// For external keys with plain text (not hashed), add to fast lookup index
-	// This enables O(1) lookup during validation instead of O(n) iteration
-	if apiKey.Source == "external" {
-		if existingKeyID != "" {
-			if aks.externalKeyIndex[apiId] == nil {
-				aks.externalKeyIndex[apiId] = make(map[string]*string)
-			}
-			aks.externalKeyIndex[apiId][apiKey.IndexKey] = &apiKey.ID
-		} else {
-			if aks.externalKeyIndex[apiId] == nil {
-				aks.externalKeyIndex[apiId] = make(map[string]*string)
-			}
-			aks.externalKeyIndex[apiId][apiKey.IndexKey] = &apiKey.ID
+	// For external keys with non-empty IndexKey, add to fast lookup index (never insert empty index entry)
+	if apiKey.Source == "external" && apiKey.IndexKey != "" {
+		if aks.externalKeyIndex[apiId] == nil {
+			aks.externalKeyIndex[apiId] = make(map[string]*string)
 		}
+		aks.externalKeyIndex[apiId][apiKey.IndexKey] = &apiKey.ID
 	}
 
 	return nil

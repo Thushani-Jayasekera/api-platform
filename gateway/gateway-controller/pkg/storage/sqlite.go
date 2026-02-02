@@ -1275,46 +1275,13 @@ func (s *SQLiteStorage) SaveAPIKey(apiKey *models.APIKey) error {
 			slog.String("apiId", apiKey.APIId),
 			slog.String("created_by", apiKey.CreatedBy))
 	} else {
-		// Existing record found, update it with new API key data
-		updateQuery := `
-			UPDATE api_keys
-			SET api_key = ?, masked_api_key = ?, display_name = ?, operations = ?, status = ?, created_by = ?, updated_at = ?, expires_at = ?, expires_in_unit = ?, expires_in_duration = ?,
-			    source = ?, external_ref_id = ?, index_key = ?
-			WHERE apiId = ? AND name = ?
-		`
-
-		_, err := tx.Exec(updateQuery,
-			apiKey.APIKey,
-			apiKey.MaskedAPIKey,
-			apiKey.DisplayName,
-			apiKey.Operations,
-			apiKey.Status,
-			apiKey.CreatedBy,
-			apiKey.UpdatedAt,
-			apiKey.ExpiresAt,
-			apiKey.Unit,
-			apiKey.Duration,
-			apiKey.Source,
-			apiKey.ExternalRefId,
-			apiKey.IndexKey,
-			apiKey.APIId,
-			apiKey.Name,
-		)
-
-		if err != nil {
-			tx.Rollback()
-			// Check for unique constraint violation on api_key field
-			if isAPIKeyUniqueConstraintError(err) {
-				return fmt.Errorf("%w: API key value already exists", ErrConflict)
-			}
-			return fmt.Errorf("failed to update API key: %w", err)
-		}
-
-		s.logger.Info("API key updated successfully",
-			slog.String("existing_id", existingID),
+		// Existing record found, return conflict error that API Key name already exists
+		tx.Rollback()
+		s.logger.Error("API key name already exists for the API",
 			slog.String("name", apiKey.Name),
 			slog.String("apiId", apiKey.APIId),
-			slog.String("created_by", apiKey.CreatedBy))
+			slog.Any("error", ErrConflict))
+		return fmt.Errorf("%w: API key name already exists for the API: %s", ErrConflict, apiKey.Name)
 	}
 
 	// Commit the transaction
@@ -1555,6 +1522,20 @@ func (s *SQLiteStorage) GetAPIKeysByAPIAndName(apiId, name string) (*models.APIK
 // UpdateAPIKey updates an existing API key
 func (s *SQLiteStorage) UpdateAPIKey(apiKey *models.APIKey) error {
 
+	// Begin transaction to ensure atomicity
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	// Ensure transaction is properly handled
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // Re-throw panic after rollback
+		}
+	}()
+
 	if apiKey.Source == "external" && apiKey.IndexKey != nil {
 		// Check for duplicate API key value within the same API (same value, different name)
 		duplicateCheckQuery := `
@@ -1565,46 +1546,59 @@ func (s *SQLiteStorage) UpdateAPIKey(apiKey *models.APIKey) error {
 		var duplicateID, duplicateName string
 		err := s.db.QueryRow(duplicateCheckQuery, apiKey.APIId, apiKey.IndexKey, apiKey.Name).Scan(&duplicateID, &duplicateName)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			tx.Rollback()
 			return fmt.Errorf("failed to check for duplicate API key: %w", err)
 		}
 		if err == nil {
 			// Row found: same key value already exists for this API under a different name
+			tx.Rollback()
 			return fmt.Errorf("%w: API key value already exists for this API", ErrConflict)
 		}
 	}
 
-	query := `
-		UPDATE api_keys
-		SET status = ?, display_name = ?, updated_at = ?, expires_at = ?, index_key = ?
-		WHERE apiId = ? AND name = ?
-	`
+	updateQuery := `
+			UPDATE api_keys
+			SET api_key = ?, masked_api_key = ?, display_name = ?, operations = ?, status = ?, created_by = ?, updated_at = ?, expires_at = ?, expires_in_unit = ?, expires_in_duration = ?,
+			    source = ?, external_ref_id = ?, index_key = ?
+			WHERE apiId = ? AND name = ?
+		`
 
-	result, err := s.db.Exec(query,
-		apiKey.Status,
+	_, err = tx.Exec(updateQuery,
+		apiKey.APIKey,
+		apiKey.MaskedAPIKey,
 		apiKey.DisplayName,
+		apiKey.Operations,
+		apiKey.Status,
+		apiKey.CreatedBy,
 		apiKey.UpdatedAt,
 		apiKey.ExpiresAt,
+		apiKey.Unit,
+		apiKey.Duration,
+		apiKey.Source,
+		apiKey.ExternalRefId,
 		apiKey.IndexKey,
 		apiKey.APIId,
 		apiKey.Name,
 	)
 
 	if err != nil {
+		tx.Rollback()
+		// Check for unique constraint violation on api_key field
+		if isAPIKeyUniqueConstraintError(err) {
+			return fmt.Errorf("%w: API key value already exists", ErrConflict)
+		}
 		return fmt.Errorf("failed to update API key: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rows == 0 {
-		return fmt.Errorf("%w: API key not found", ErrNotFound)
-	}
-
 	s.logger.Info("API key updated successfully",
-		slog.String("id", apiKey.ID),
-		slog.String("status", string(apiKey.Status)))
+		slog.String("name", apiKey.Name),
+		slog.String("apiId", apiKey.APIId),
+		slog.String("created_by", apiKey.CreatedBy))
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
 
 	return nil
 }

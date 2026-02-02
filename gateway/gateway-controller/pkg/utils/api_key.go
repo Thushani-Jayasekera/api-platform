@@ -214,34 +214,11 @@ func (s *APIKeyService) CreateAPIKey(params APIKeyCreationParams) (*APIKeyCreati
 	// For local keys, retry once if duplicate is detected during generation
 	apiKey, err := s.createAPIKeyFromRequest(params.Handle, &params.Request, user.UserID, config)
 	if err != nil {
-		// Check if this is a duplicate key error
-		if strings.Contains(err.Error(), "API key value already exists") {
-			if isExternalKeyInjection {
-				// For external keys, return error immediately (user provided duplicate)
-				logger.Error("External API key already exists",
-					slog.String("operation", operationType+"_key"))
-				return nil, fmt.Errorf("provided API key already exists for this API")
-			}
-
-			// For local keys, retry with a new generated key
-			logger.Warn("API key collision detected during generation, retrying",
-				slog.String("operation", operationType+"_key"))
-
-			apiKey, err = s.createAPIKeyFromRequest(params.Handle, &params.Request, user.UserID, config)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Failed to %s API key after retry", operationType),
-					slog.String("operation", operationType+"_key"),
-					slog.Any("error", err))
-				return nil, fmt.Errorf("failed to %s API key after retry: %w", operationType, err)
-			}
-			result.IsRetry = true
-		} else {
-			// Other error, return immediately
-			logger.Error(fmt.Sprintf("Failed to %s API key", operationType),
-				slog.String("operation", operationType+"_key"),
-				slog.Any("error", err))
-			return nil, fmt.Errorf("failed to %s API key: %w", operationType, err)
-		}
+		logger.Error("Failed to generate API key",
+			slog.Any("error", err),
+			slog.String("handle", params.Handle),
+			slog.String("correlation_id", params.CorrelationID))
+		return nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
 
 	// Save API key to database (only if persistent mode)
@@ -545,6 +522,8 @@ func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateRe
 			slog.Any("error", err))
 		return nil, fmt.Errorf("failed to update API key from request: %w", err)
 	}
+	// Clear plaintext secret before persisting or storing
+	updatedKey.PlainAPIKey = ""
 
 	// Save to database (if persistent mode)
 	if s.db != nil {
@@ -709,7 +688,7 @@ func (s *APIKeyService) RegenerateAPIKey(params APIKeyRegenerationParams) (*APIK
 
 	// Save regenerated API key to database (only if persistent mode)
 	if s.db != nil {
-		if err := s.db.SaveAPIKey(regeneratedKey); err != nil {
+		if err := s.db.UpdateAPIKey(regeneratedKey); err != nil {
 			if errors.Is(err, storage.ErrConflict) {
 				// Handle collision by retrying once with a new key
 				logger.Warn("API key collision detected during regeneration, retrying",
@@ -726,7 +705,7 @@ func (s *APIKeyService) RegenerateAPIKey(params APIKeyRegenerationParams) (*APIK
 				}
 
 				// Try saving again
-				if err := s.db.SaveAPIKey(regeneratedKey); err != nil {
+				if err := s.db.UpdateAPIKey(regeneratedKey); err != nil {
 					logger.Error("Failed to save regenerated API key after retry",
 						slog.Any("error", err),
 						slog.String("correlation_id", params.CorrelationID))
@@ -961,21 +940,27 @@ func (s *APIKeyService) createAPIKeyFromRequest(handle string, request *api.APIK
 	// Generate masked API key for display purposes
 	maskedAPIKeyValue := s.MaskAPIKey(plainAPIKeyValue)
 
-	// Get displayName from request (required field)
-	displayName := fmt.Sprintf("%s-key-%s", handle, id[:8]) // Default display name and name
+	// Handle displayName - optional during creation
+	var displayName string
 	if request.DisplayName != nil && strings.TrimSpace(*request.DisplayName) != "" {
+		// User provided a display name
 		displayName = strings.TrimSpace(*request.DisplayName)
+
+		// Validate user-provided displayName
+		if err := ValidateDisplayName(displayName); err != nil {
+			return nil, fmt.Errorf("invalid display name: %w", err)
+		}
+	} else {
+		// Auto-generate display name: use handle + short ID portion
+		// Example: "weather-api-jh~cPInv"
+		displayName = fmt.Sprintf("%s-key-%s", handle, id[:8])
 	}
 
-	// Validate displayName
-	if err := ValidateDisplayName(displayName); err != nil {
-		return nil, err
-	}
-
-	// Generate URL-safe name from displayName
-	name, err := GenerateAPIKeyName(displayName)
+	// Generate unique URL-safe name from displayName with collision handling
+	// name is immutable after creation and used in path parameters
+	name, err := s.generateUniqueAPIKeyName(handle, displayName, 5)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate API key name from displayName: %w", err)
+		return nil, fmt.Errorf("failed to generate unique API key name: %w", err)
 	}
 
 	// Process operations
@@ -1059,7 +1044,6 @@ func (s *APIKeyService) createAPIKeyFromRequest(handle string, request *api.APIK
 		externalRefId := strings.TrimSpace(*request.ExternalRefId)
 		apiKey.ExternalRefId = &externalRefId
 	}
-
 
 	// Temporarily store the plain key for response generation
 	// This field is not persisted and only used for returning to user
@@ -1156,25 +1140,35 @@ func (s *APIKeyService) buildAPIKeyResponse(key *models.APIKey, handle string, p
 	}
 }
 
-// UpdateAPIKey updates an existing API key with a specific provided value
+// updateAPIKeyFromRequest updates an existing API key with a specific provided value
+// Only mutable fields (displayName, api_key value, expiration) can be updated
+// Immutable fields (name, source, createdAt, createdBy) are preserved from existing key
 func (s *APIKeyService) updateAPIKeyFromRequest(existingKey *models.APIKey, request api.APIKeyCreationRequest,
 	user string, logger *slog.Logger) (*models.APIKey, error) {
-	// Generate new API key value
-	plainAPIKeyValue := strings.TrimSpace(*request.ApiKey)
 
+	// Validate required field: api_key value
 	if request.ApiKey == nil || strings.TrimSpace(*request.ApiKey) == "" {
 		return nil, fmt.Errorf("api_key is required for update")
 	}
 
+	plainAPIKeyValue := strings.TrimSpace(*request.ApiKey)
 	if err := ValidateAPIKeyValue(plainAPIKeyValue); err != nil {
 		return nil, fmt.Errorf("invalid API key value: %w", err)
 	}
 
-	if err := ValidateDisplayName(*request.DisplayName); err != nil {
-		return nil, fmt.Errorf("invalid display name: %w", err)
-	}
+	// Handle displayName - optional during update
+	// If not provided or empty, keep the existing displayName
+	var displayName string
+	if request.DisplayName != nil && strings.TrimSpace(*request.DisplayName) != "" {
+		displayName = strings.TrimSpace(*request.DisplayName)
 
-	displayName := strings.TrimSpace(*request.DisplayName)
+		// Validate user-provided displayName
+		if err := ValidateDisplayName(displayName); err != nil {
+			return nil, fmt.Errorf("invalid display name: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("display name is required for update")
+	}
 
 	operations := "[\"*\"]" // Default to all operations
 
@@ -1232,9 +1226,9 @@ func (s *APIKeyService) updateAPIKeyFromRequest(existingKey *models.APIKey, requ
 			slog.Int("duration", *duration),
 			slog.Time("calculated_expires_at", *expiresAt))
 	} else if request.ExpiresAt == nil && request.ExpiresIn == nil {
-			// Existing key has no expiry, new key also has no expiry
-			expiresAt = nil
-			logger.Info("No expiry set for updated key (matching existing key)")
+		// Existing key has no expiry, new key also has no expiry
+		expiresAt = nil
+		logger.Info("No expiry set for updated key (matching existing key)")
 	}
 
 	// Validate that expiresAt is in the future (if set)
@@ -1854,6 +1848,91 @@ func (s *APIKeyService) getCurrentAPIKeyCount(apiId, userID string) (int, error)
 	return 0, fmt.Errorf("failed to get current API key count")
 }
 
+// generateShortSuffix generates a short 4-character URL-safe suffix
+// Uses 3 random bytes encoded as base64url, similar to patterns used in the repository
+// Returns a string like "efhh" or "xrhy"
+func (s *APIKeyService) generateShortSuffix() (string, error) {
+	// Generate 3 random bytes for a 4-character suffix
+	randomBytes := make([]byte, 3)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes for suffix: %w", err)
+	}
+
+	// Encode as base64url without padding (3 bytes = 4 chars)
+	suffix := base64.RawURLEncoding.EncodeToString(randomBytes)
+
+	// Replace any non-alphanumeric characters to ensure only lowercase letters and numbers
+	// Convert to lowercase and replace special chars with random letters
+	suffix = strings.ToLower(suffix)
+	suffix = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		// Replace special chars with a random lowercase letter
+		return 'a' + rune(randomBytes[0]%26)
+	}, suffix)
+
+	return suffix, nil
+}
+
+// generateUniqueAPIKeyName generates a unique name from displayName, handling collisions
+// If a name collision occurs, appends a short suffix (e.g., "-efhh", "-xrhy")
+// Retries up to maxRetries times to find a unique name
+func (s *APIKeyService) generateUniqueAPIKeyName(apiId, displayName string, maxRetries int) (string, error) {
+	// Generate base name from display name
+	baseName, err := GenerateAPIKeyName(displayName)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate base name: %w", err)
+	}
+
+	// Try base name first
+	exists, err := s.checkAPIKeyNameExists(apiId, baseName)
+	if err != nil {
+		return "", fmt.Errorf("failed to check name existence: %w", err)
+	}
+	if !exists {
+		return baseName, nil
+	}
+
+	// Name collision detected, try with suffixes
+	for i := 0; i < maxRetries; i++ {
+		suffix, err := s.generateShortSuffix()
+		if err != nil {
+			return "", err
+		}
+
+		uniqueName := baseName + "-" + suffix
+
+		// Enforce max length (name field is typically 63 chars max)
+		if len(uniqueName) > apiKeyNameMaxLength {
+			// Truncate base name to make room for suffix
+			truncatedBase := baseName[:apiKeyNameMaxLength-len(suffix)-1]
+			uniqueName = truncatedBase + "-" + suffix
+		}
+
+		exists, err := s.checkAPIKeyNameExists(apiId, uniqueName)
+		if err != nil {
+			return "", fmt.Errorf("failed to check name existence: %w", err)
+		}
+		if !exists {
+			return uniqueName, nil
+		}
+	}
+
+	return "", fmt.Errorf("failed to generate unique name after %d attempts", maxRetries)
+}
+
+// checkAPIKeyNameExists checks if an API key name already exists for the given API
+func (s *APIKeyService) checkAPIKeyNameExists(apiId, name string) (bool, error) {
+	// Check in database first
+	var apiKey *models.APIKey
+	if s.db != nil {
+		apiKey, _ = s.db.GetAPIKeysByAPIAndName(apiId, name)
+	}
+
+	return apiKey != nil, nil
+}
+
 // generateShortUniqueID generates a 22-character URL-safe unique identifier
 // Uses 16 random bytes (128 bits) encoded as base64url without padding
 // Results in exactly 22 characters that are URL-safe and highly unique
@@ -1895,12 +1974,12 @@ func (s *APIKeyService) CreateExternalAPIKeyFromEvent(
 	)
 
 	params := APIKeyCreationParams{
-		Handle: handle,
+		Handle:  handle,
 		Request: *request,
 		User: &commonmodels.AuthContext{
 			UserID: user,
 		},
-		Logger: logger,
+		Logger:        logger,
 		CorrelationID: correlationID,
 	}
 
@@ -1923,12 +2002,12 @@ func (s *APIKeyService) RevokeExternalAPIKeyFromEvent(
 	logger *slog.Logger,
 ) error {
 	apiKeyRevocationParams := APIKeyRevocationParams{
-		Handle: handle,
+		Handle:     handle,
 		APIKeyName: keyName,
 		User: &commonmodels.AuthContext{
 			UserID: user,
 		},
-		Logger: logger,
+		Logger:        logger,
 		CorrelationID: correlationID,
 	}
 
@@ -1955,13 +2034,13 @@ func (s *APIKeyService) UpdateExternalAPIKeyFromEvent(
 ) error {
 
 	apiKeyUpdateParams := APIKeyUpdateParams{
-		Handle: handle,
+		Handle:     handle,
 		APIKeyName: apiKeyName,
-		Request: *request,
+		Request:    *request,
 		User: &commonmodels.AuthContext{
 			UserID: user,
 		},
-		Logger: logger,
+		Logger:        logger,
 		CorrelationID: correlationID,
 	}
 	_, err := s.UpdateAPIKey(apiKeyUpdateParams)

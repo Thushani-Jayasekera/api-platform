@@ -528,11 +528,15 @@ func (cs *ConfigStore) StoreAPIKey(apiKey *models.APIKey) error {
 	}
 
 	if existingKeyID != "" {
-		// Update the existing entry in apiKeysByAPI and externalKeyIndex
-		delete(cs.apiKeysByAPI[apiKey.APIId], existingKeyID)
-		if apiKey.Source == "external" && apiKey.IndexKey != nil {
-			delete(cs.externalKeyIndex[apiKey.APIId], *apiKey.IndexKey)
+		// Remove old external index entry using the previous key's IndexKey (avoid leaking stale entries after rotation)
+		oldEntry := cs.apiKeysByAPI[apiKey.APIId][existingKeyID]
+		if oldEntry != nil && oldEntry.Source == "external" && oldEntry.IndexKey != nil {
+			if extIndex, ok := cs.externalKeyIndex[apiKey.APIId]; ok && extIndex != nil {
+				delete(extIndex, *oldEntry.IndexKey)
+			}
 		}
+		// Update the existing entry in apiKeysByAPI
+		delete(cs.apiKeysByAPI[apiKey.APIId], existingKeyID)
 		cs.apiKeysByAPI[apiKey.APIId][apiKey.ID] = apiKey // in API key rotation scenario apiKey.ID = existingKeyID
 		if apiKey.Source == "external" {
 			if apiKey.IndexKey == nil {

@@ -51,6 +51,7 @@ func TestAPIKeyHashedValidation(t *testing.T) {
 	apiKey := &APIKey{
 		ID:         "test-id-1",
 		Name:       "test-key",
+		Source:     "local",
 		APIKey:     hashedAPIKey, // Store hashed key
 		APIId:      "api-123",
 		Operations: "[\"*\"]",
@@ -99,6 +100,7 @@ func TestAPIKeyHashedValidationFailures(t *testing.T) {
 		ID:         "test-id-2",
 		Name:       "test-key-2",
 		APIKey:     hashedAPIKey,
+		Source:     "local",
 		APIId:      "api-456",
 		Operations: "[\"*\"]",
 		Status:     Active,
@@ -157,6 +159,7 @@ func TestAPIKeyHashedRevocation(t *testing.T) {
 		ID:         "test-id-3",
 		Name:       "revoke-test-key",
 		APIKey:     hashedAPIKey,
+		Source:     "local",
 		APIId:      "api-789",
 		Operations: "[\"*\"]",
 		Status:     Active,
