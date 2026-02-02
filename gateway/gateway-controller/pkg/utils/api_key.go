@@ -1925,13 +1925,19 @@ func (s *APIKeyService) generateUniqueAPIKeyName(apiId, displayName string, maxR
 
 // checkAPIKeyNameExists checks if an API key name already exists for the given API
 func (s *APIKeyService) checkAPIKeyNameExists(apiId, name string) (bool, error) {
-	// Check in database first
-	var apiKey *models.APIKey
 	if s.db != nil {
-		apiKey, _ = s.db.GetAPIKeysByAPIAndName(apiId, name)
+		if apiKey, _ := s.db.GetAPIKeysByAPIAndName(apiId, name); apiKey != nil {
+			return true, nil
+		}
 	}
 
-	return apiKey != nil, nil
+	// Fallback to memory store (for in-memory mode)
+	if s.store != nil {
+		if apiKey, err := s.store.GetAPIKeyByName(apiId, name); err == nil && apiKey != nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // generateShortUniqueID generates a 22-character URL-safe unique identifier
@@ -1970,7 +1976,6 @@ func (s *APIKeyService) CreateExternalAPIKeyFromEvent(
 ) (*APIKeyCreationResult, error) {
 	logger.Info("Creating external API key from event",
 		slog.String("api_id", handle),
-		slog.String("key_name", *request.DisplayName),
 		slog.Bool("has_expiry", request.ExpiresAt != nil),
 	)
 
@@ -2050,7 +2055,6 @@ func (s *APIKeyService) UpdateExternalAPIKeyFromEvent(
 			slog.String("correlation_id", correlationID),
 			slog.String("user_id", user),
 			slog.String("api_id", handle),
-			slog.String("key_name", *request.DisplayName),
 		)
 		return err
 	}
@@ -2061,7 +2065,7 @@ func (s *APIKeyService) UpdateExternalAPIKeyFromEvent(
 }
 
 // computeIndexKey computes a SHA-256 hash-based index key for fast lookup
-// Returns the index key in format "apiId:hash_hex"
+// Returns the index key as "hash_hex" (SHA-256 of the plain key)
 func computeExternalKeyIndexKey(plainAPIKey string) string {
 	if plainAPIKey == "" {
 		return ""

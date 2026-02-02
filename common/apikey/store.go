@@ -519,7 +519,7 @@ func parseAPIKey(value string) (ParsedAPIKey, bool) {
 }
 
 // computeExternalKeyIndexKey computes a SHA-256 hash of the plain-text API key for fast lookup
-// Returns the index key in format "apiId:hash_hex"
+// Returns the index key as "hash_hex" (SHA-256 of the plain key)
 func computeExternalKeyIndexKey(plainAPIKey string) string {
 	trimmedAPIKey := strings.TrimSpace(plainAPIKey)
 	if trimmedAPIKey == "" {

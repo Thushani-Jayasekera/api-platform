@@ -344,6 +344,8 @@ curl -X POST "http://localhost:9090/apis/weather-api-v1.0/api-keys" \
 
 ### Inject API Key
 
+This operation uses the same endpoint as [Generate API Key](#generate-api-key) (`POST /apis/{id}/api-keys`). The behavior is determined by the presence of the `api_key` field in the request body: omit `api_key` to generate a system key, or include `api_key` to inject an external key. See the request body examples in each section for the differing payloads.
+
 Inject an externally generated API key for a specific API.
 
 **Endpoint**: `POST /apis/{id}/api-keys`
@@ -373,7 +375,7 @@ Inject an externally generated API key for a specific API.
 |----------------------|------|----------|-------------|
 | `displayName`               | string | No | Custom name for the API key. If not provided, a default name will be generated |
 | `name`               | string | No | Identifier of the API key. If not provided, a default identifier will be generated |
-| `api_key`               | string | No | The API key value to inject |
+| `api_key`               | string | No | The API key value to inject. Injected keys can be externally generated and are not required to use the platform `apip_` prefix; platform-generated keys do use the `apip_` prefix. See [Update API Key](#update-api-key) for the same `api_key` semantics when updating. |
 | `expires_at`         | string (ISO 8601) | No | Specific expiration timestamp for the API key. If both `expires_in` and `expires_at` are provided, `expires_at` takes precedence |
 | `expires_in`         | object | No | Relative expiration time from creation |
 | `expires_in.duration` | integer | Yes (if expiresIn used) | Duration value |
@@ -483,7 +485,7 @@ Update an existing API key with a new externally provided API key value and opti
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `displayName` | string | Yes | Display name for the API key |
+| `displayName` | string | No | Display name for the API key |
 | `api_key` | string | Yes | The new API key value to set. Must meet minimum length requirements and can be any format (not restricted to platform-generated format) |
 | `expires_at` | string (ISO 8601) | No | Specific expiration timestamp for the API key. If both `expires_in` and `expires_at` are provided, `expires_at` takes precedence |
 | `expires_in` | object | No | Relative expiration time from now. If not provided, keeps the existing expiration |
