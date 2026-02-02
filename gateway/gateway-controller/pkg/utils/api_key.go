@@ -958,7 +958,8 @@ func (s *APIKeyService) createAPIKeyFromRequest(handle string, request *api.APIK
 
 	// Generate unique URL-safe name from displayName with collision handling
 	// name is immutable after creation and used in path parameters
-	name, err := s.generateUniqueAPIKeyName(handle, displayName, 5)
+	// Use config.ID (API internal ID) not handle so uniqueness is checked per API
+	name, err := s.generateUniqueAPIKeyName(config.ID, displayName, 5)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate unique API key name: %w", err)
 	}

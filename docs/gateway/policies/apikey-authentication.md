@@ -854,12 +854,6 @@ For security reasons, API keys are masked when displayed in list operations:
 9. **HTTPS Only**: Always use API keys over HTTPS to prevent interception
 10. **Logging Security**: Be cautious with logging - API keys are automatically masked in list responses but should be kept secure in application logs
 
-12. **External Key Migration**: When migrating keys from external systems:
-    - Use the **Update** endpoint to preserve existing key values
-    - Validate key format and length requirements before migration
-    - Test the updated keys in non-production environments first
-    - Update all consuming applications before making the change in production
-
 ## Use Cases
 
 1. **Simple API Security**: Protect APIs with straightforward pre-shared key authentication for internal services or partner integrations.
