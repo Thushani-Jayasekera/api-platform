@@ -487,8 +487,8 @@ Update an existing API key with a new externally provided API key value and opti
 |-------|------|----------|-------------|
 | `displayName` | string | No | Display name for the API key |
 | `api_key` | string | Yes | The new API key value to set. Must meet minimum length requirements and can be any format (not restricted to platform-generated format) |
-| `expires_at` | string (ISO 8601) | No | Specific expiration timestamp for the API key. If both `expires_in` and `expires_at` are provided, `expires_at` takes precedence |
-| `expires_in` | object | No | Relative expiration time from now. If not provided, keeps the existing expiration |
+| `expires_at` | string (ISO 8601) | No | Specific expiration timestamp. If both `expires_at` and `expires_in` are provided, `expires_at` takes precedence. Omitting both `expires_at` and `expires_in` clears the key's expiration (no expiry). |
+| `expires_in` | object | No | Relative expiration time from now. Omitting both `expires_at` and `expires_in` removes the API key's expiration (UpdateAPIKey clears expiry when `request.ExpiresAt` and `request.ExpiresIn` are both nil). |
 | `expires_in.duration` | integer | Yes (if expiresIn used) | Duration value |
 | `expires_in.unit` | string | Yes (if expiresIn used) | Time unit: `seconds`, `minutes`, `hours`, `days`, `weeks`, `months` |
 
