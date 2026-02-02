@@ -25,7 +25,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/wso2/api-platform/common/apikey"
+	// TODO: Migrate to common/apikey.APIkeyStore for better architecture
+	// Currently using policy/v1alpha store to ensure validation and xDS use the same instance
+	policyv1alpha "github.com/wso2/api-platform/sdk/gateway/policy/v1alpha"
 	policyenginev1 "github.com/wso2/api-platform/sdk/gateway/policyengine/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -35,12 +37,14 @@ import (
 
 // APIKeyOperationHandler handles API key operations received via xDS
 type APIKeyOperationHandler struct {
-	apiKeyStore *apikey.APIkeyStore
+	// TODO: Migrate to common/apikey.APIkeyStore for better architecture
+	// Currently using policy/v1alpha store to ensure validation and xDS use the same instance
+	apiKeyStore *policyv1alpha.APIkeyStore
 	logger      *slog.Logger
 }
 
 // NewAPIKeyOperationHandler creates a new API key operation handler
-func NewAPIKeyOperationHandler(apiKeyStore *apikey.APIkeyStore, logger *slog.Logger) *APIKeyOperationHandler {
+func NewAPIKeyOperationHandler(apiKeyStore *policyv1alpha.APIkeyStore, logger *slog.Logger) *APIKeyOperationHandler {
 	return &APIKeyOperationHandler{
 		apiKeyStore: apiKeyStore,
 		logger:      logger,
@@ -128,14 +132,14 @@ func (h *APIKeyOperationHandler) handleStoreOperation(operation policyenginev1.A
 		"api_key_name", operation.APIKey.Name,
 		"correlation_id", operation.CorrelationID)
 
-	// Convert APIKeyData to apikey.APIKey
-	apiKey := &apikey.APIKey{
+	// Convert APIKeyData to policyv1alpha.APIKey
+	apiKey := &policyv1alpha.APIKey{
 		ID:         operation.APIKey.ID,
 		Name:       operation.APIKey.Name,
 		APIKey:     operation.APIKey.APIKey,
 		APIId:      operation.APIKey.APIId,
 		Operations: operation.APIKey.Operations,
-		Status:     apikey.APIKeyStatus(operation.APIKey.Status),
+		Status:     policyv1alpha.APIKeyStatus(operation.APIKey.Status),
 		CreatedAt:  operation.APIKey.CreatedAt,
 		CreatedBy:  operation.APIKey.CreatedBy,
 		UpdatedAt:  operation.APIKey.UpdatedAt,
@@ -144,7 +148,7 @@ func (h *APIKeyOperationHandler) handleStoreOperation(operation policyenginev1.A
 		IndexKey:   operation.APIKey.IndexKey,
 	}
 
-	// Store the API key
+	// Store the API key in the policy validation store
 	if err := h.apiKeyStore.StoreAPIKey(operation.APIId, apiKey); err != nil {
 		return fmt.Errorf("failed to store API key in store: %w", err)
 	}
@@ -208,14 +212,14 @@ func (h *APIKeyOperationHandler) replaceAllAPIKeys(apiKeyDataList []APIKeyData) 
 
 	// Then, add all API keys from the new state
 	for i, apiKeyData := range apiKeyDataList {
-		// Convert APIKeyData to apikey.APIKey
-		apiKey := &apikey.APIKey{
+		// Convert APIKeyData to policyv1alpha.APIKey
+		apiKey := &policyv1alpha.APIKey{
 			ID:         apiKeyData.ID,
 			Name:       apiKeyData.Name,
 			APIKey:     apiKeyData.APIKey,
 			APIId:      apiKeyData.APIId,
 			Operations: apiKeyData.Operations,
-			Status:     apikey.APIKeyStatus(apiKeyData.Status),
+			Status:     policyv1alpha.APIKeyStatus(apiKeyData.Status),
 			CreatedAt:  apiKeyData.CreatedAt,
 			CreatedBy:  apiKeyData.CreatedBy,
 			UpdatedAt:  apiKeyData.UpdatedAt,
@@ -224,7 +228,7 @@ func (h *APIKeyOperationHandler) replaceAllAPIKeys(apiKeyDataList []APIKeyData) 
 			IndexKey:   apiKeyData.IndexKey,
 		}
 
-		// Store the API key
+		// Store the API key in the policy validation store
 		if err := h.apiKeyStore.StoreAPIKey(apiKeyData.APIId, apiKey); err != nil {
 			h.logger.Error("Failed to store API key during state replacement",
 				"error", err,

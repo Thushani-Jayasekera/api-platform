@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package apikey
+package policyv1alpha
 
 import (
 	"crypto/sha256"
@@ -293,7 +293,6 @@ func (aks *APIkeyStore) RevokeAPIKey(apiId, providedAPIKey string) error {
 	defer aks.mu.Unlock()
 
 	var matchedKey *APIKey
-
 
 	// Try to parse as local key (format: key_id); empty Source treated as "local"
 	parsedAPIkey, ok := parseAPIKey(providedAPIKey)

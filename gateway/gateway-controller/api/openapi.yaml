@@ -351,10 +351,10 @@ paths:
     post:
       summary: Create a new API key for an API
       description: |
-        Create a new API key for the specified API. The created key can be
-        used by clients to authenticate requests to the API if API Key validation
-        policy is applied. The key is a 32-byte random value encoded in hexadecimal
-        and prefixed with "apip_" for local keys, or the provided key for external keys.
+        Generates a new API key for the specified API.
+        Use the created key to authenticate client requests when the API Key validation policy is enabled.
+        The generated key is a 32-byte random value, encoded in hexadecimal, and prefixed with apip_.
+        If you are using an external API key, you may provide it directly without modification.
       operationId: createAPIKey
       tags:
         - API Management
@@ -382,7 +382,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/APIKeyGenerationResponse"
+                $ref: "#/components/schemas/APIKeyCreationResponse"
         "400":
           description: Invalid configuration (validation failed)
           content:
@@ -482,7 +482,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/APIKeyGenerationResponse"
+                $ref: "#/components/schemas/APIKeyCreationResponse"
         "400":
           description: Invalid configuration (validation failed)
           content:
@@ -544,7 +544,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/APIKeyGenerationResponse"
+                $ref: "#/components/schemas/APIKeyCreationResponse"
         "400":
           description: Invalid request (validation failed)
           content:
@@ -2293,20 +2293,24 @@ components:
 
     APIKeyCreationRequest:
       type: object
+      required:
+        - displayName
       properties:
-        name:
+        displayName:
           type: string
-          description: Name of the API key
-          example: my-weather-api-key
+          description: Human-readable name for the API key (1-100 characters)
+          minLength: 1
+          maxLength: 100
+          example: My Production Key
         api_key:
           type: string
-          minLength: 16
+          minLength: 20
           description: |
             Optional plain-text API key value for external key injection.
             If provided, this key will be used instead of generating a new one.
             The key will be hashed before storage. The key can be in any format
-            (minimum 16 characters). Use this for injecting externally generated
-            API keys (e.g., from Cloud APIM).
+            (minimum 20 characters). Use this for injecting externally generated
+            API keys.
           example: "cloud-apim-key-abc123xyz789"
         expires_in:
           type: object
@@ -2338,11 +2342,11 @@ components:
         external_ref_id:
           type: string
           description: |
-            External reference ID for the API key (e.g., Cloud APIM key ID).
+            External reference ID for the API key.
             This field is optional and used for tracing purposes only.
             The gateway generates its own internal ID for tracking.
           example: "cloud-apim-key-98765"
-    APIKeyGenerationResponse:
+    APIKeyCreationResponse:
       type: object
       properties:
         status:
@@ -2366,8 +2370,17 @@ components:
       properties:
         name:
           type: string
-          description: Name of the API key
-          example: my-weather-api-key
+          description: URL-safe identifier for the API key (auto-generated from displayName, immutable, used as path parameter)
+          pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+          minLength: 3
+          maxLength: 63
+          example: my-production-key
+        displayName:
+          type: string
+          description: Human-readable name for the API key (user-provided, mutable)
+          minLength: 1
+          maxLength: 100
+          example: My Production Key
         api_key:
           type: string
           description: Generated API key with apip_ prefix
@@ -2410,6 +2423,10 @@ components:
             - local
             - external
           example: local
+        external_ref_id:
+          type: string
+          description: External reference ID for the API key
+          example: "cloud-apim-key-98765"
       required:
         - name
         - apiId

@@ -2387,7 +2387,7 @@ func (s *APIServer) CreateAPIKey(c *gin.Context, id string) {
 	// Parse and validate request body
 	var request api.APIKeyCreationRequest
 	if err := s.bindRequestBody(c, &request); err != nil {
-		log.Warn("Invalid request body for API key creation",
+		log.Error("Failed to parse request body for API key creation",
 			slog.Any("error", err),
 			slog.String("handle", handle),
 			slog.String("correlation_id", correlationID))
@@ -2412,6 +2412,11 @@ func (s *APIServer) CreateAPIKey(c *gin.Context, id string) {
 		// Check error type to determine appropriate status code
 		if strings.Contains(err.Error(), "not found") {
 			c.JSON(http.StatusNotFound, api.ErrorResponse{
+				Status:  "error",
+				Message: err.Error(),
+			})
+		} else if storage.IsConflictError(err) || strings.Contains(err.Error(), "already exists") {
+			c.JSON(http.StatusConflict, api.ErrorResponse{
 				Status:  "error",
 				Message: err.Error(),
 			})
@@ -2510,7 +2515,7 @@ func (s *APIServer) UpdateAPIKey(c *gin.Context, id string, apiKeyName string) {
 		slog.String("correlation_id", correlationID))
 
 	// Parse and validate request body
-	var request api.APIKeyUpdateRequest
+	var request api.APIKeyCreationRequest
 	if err := s.bindRequestBody(c, &request); err != nil {
 		log.Warn("Invalid request body for API key update",
 			slog.Any("error", err),
@@ -2523,32 +2528,11 @@ func (s *APIServer) UpdateAPIKey(c *gin.Context, id string, apiKeyName string) {
 		return
 	}
 
-	// Validate API key value is provided (check nil first)
-	if request.ApiKey == nil || *request.ApiKey == "" {
-		log.Warn("API key value is missing or empty in update request",
-			slog.String("handle", handle),
-			slog.String("key_name", apiKeyName),
-			slog.Bool("is_nil", request.ApiKey == nil),
-			slog.String("correlation_id", correlationID))
+	// If API key is not provided, return an error
+	if request.ApiKey == nil {
 		c.JSON(http.StatusBadRequest, api.ErrorResponse{
 			Status:  "error",
 			Message: "API key value is required",
-		})
-		return
-	}
-
-	// Validate API key minimum length (16 characters as per OpenAPI spec)
-	const minAPIKeyLength = 16
-	if len(*request.ApiKey) < minAPIKeyLength {
-		log.Warn("API key value is too short in update request",
-			slog.String("handle", handle),
-			slog.String("key_name", apiKeyName),
-			slog.Int("provided_length", len(*request.ApiKey)),
-			slog.Int("minimum_length", minAPIKeyLength),
-			slog.String("correlation_id", correlationID))
-		c.JSON(http.StatusBadRequest, api.ErrorResponse{
-			Status:  "error",
-			Message: fmt.Sprintf("API key must be at least %d characters long", minAPIKeyLength),
 		})
 		return
 	}
@@ -2571,6 +2555,11 @@ func (s *APIServer) UpdateAPIKey(c *gin.Context, id string, apiKeyName string) {
 				Status:  "error",
 				Message: err.Error(),
 			})
+		} else if storage.IsConflictError(err) || strings.Contains(err.Error(), "already exists") {
+			c.JSON(http.StatusConflict, api.ErrorResponse{
+				Status:  "error",
+				Message: err.Error(),
+			})
 		} else {
 			c.JSON(http.StatusInternalServerError, api.ErrorResponse{
 				Status:  "error",
@@ -2586,7 +2575,6 @@ func (s *APIServer) UpdateAPIKey(c *gin.Context, id string, apiKeyName string) {
 		slog.String("user", user.UserID),
 		slog.String("correlation_id", correlationID))
 
-	// Return the response using the generated schema
 	c.JSON(http.StatusOK, result.Response)
 }
 
@@ -2653,11 +2641,10 @@ func (s *APIServer) RegenerateAPIKey(c *gin.Context, id string, apiKeyName strin
 
 	log.Info("API key rotation completed",
 		slog.String("handle", handle),
-		slog.String("key name", apiKeyName),
+		slog.String("key_name", apiKeyName),
 		slog.String("user", user.UserID),
 		slog.String("correlation_id", correlationID))
 
-	// Return the response using the generated schema
 	c.JSON(http.StatusOK, result.Response)
 }
 

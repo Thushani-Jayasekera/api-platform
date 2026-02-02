@@ -217,11 +217,10 @@ func (s *GatewayEventsService) BroadcastUndeploymentEvent(gatewayID string, unde
 // - Payload size validation
 // - Delivery statistics tracking
 func (s *GatewayEventsService) BroadcastAPIKeyCreatedEvent(gatewayID string, event *model.APIKeyCreatedEvent) error {
-	const maxAttempts = 1
+	const maxAttempts = 2
 
 	var lastError error
 
-	// Single attempt delivery for API key events
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		err := s.broadcastAPIKeyCreated(gatewayID, event)
 		if err == nil {
@@ -247,7 +246,7 @@ func (s *GatewayEventsService) BroadcastAPIKeyCreatedEvent(gatewayID string, eve
 // - Payload size validation
 // - Delivery statistics tracking
 func (s *GatewayEventsService) BroadcastAPIKeyRevokedEvent(gatewayID string, event *model.APIKeyRevokedEvent) error {
-	const maxAttempts = 1
+	const maxAttempts = 2
 
 	var lastError error
 
@@ -276,14 +275,12 @@ func (s *GatewayEventsService) broadcastAPIKeyCreated(gatewayID string, event *m
 	// Serialize payload
 	payloadJSON, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("[ERROR] Failed to serialize API key created event: gatewayID=%s error=%v", gatewayID, err)
 		return fmt.Errorf("failed to serialize API key created event: %w", err)
 	}
 
 	// Validate payload size
 	if len(payloadJSON) > MaxEventPayloadSize {
 		err := fmt.Errorf("event payload exceeds maximum size: %d bytes (limit: %d bytes)", len(payloadJSON), MaxEventPayloadSize)
-		log.Printf("[ERROR] Payload size validation failed: gatewayID=%s size=%d error=%v", gatewayID, len(payloadJSON), err)
 		return err
 	}
 
@@ -298,15 +295,12 @@ func (s *GatewayEventsService) broadcastAPIKeyCreated(gatewayID string, event *m
 	// Serialize complete event
 	eventJSON, err := json.Marshal(eventDTO)
 	if err != nil {
-		log.Printf("[ERROR] Failed to marshal API key created event DTO: gatewayID=%s correlationId=%s error=%v",
-			gatewayID, correlationID, err)
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
 	// Get all connections for this gateway
 	connections := s.manager.GetConnections(gatewayID)
 	if len(connections) == 0 {
-		log.Printf("[WARN] No active connections for gateway: gatewayID=%s correlationId=%s", gatewayID, correlationID)
 		return fmt.Errorf("no active connections for gateway: %s", gatewayID)
 	}
 
@@ -351,14 +345,12 @@ func (s *GatewayEventsService) broadcastAPIKeyRevoked(gatewayID string, event *m
 	// Serialize payload
 	payloadJSON, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("[ERROR] Failed to serialize API key revoked event: gatewayID=%s error=%v", gatewayID, err)
 		return fmt.Errorf("failed to serialize API key revoked event: %w", err)
 	}
 
 	// Validate payload size
 	if len(payloadJSON) > MaxEventPayloadSize {
 		err := fmt.Errorf("event payload exceeds maximum size: %d bytes (limit: %d bytes)", len(payloadJSON), MaxEventPayloadSize)
-		log.Printf("[ERROR] Payload size validation failed: gatewayID=%s size=%d error=%v", gatewayID, len(payloadJSON), err)
 		return err
 	}
 
@@ -373,15 +365,12 @@ func (s *GatewayEventsService) broadcastAPIKeyRevoked(gatewayID string, event *m
 	// Serialize complete event
 	eventJSON, err := json.Marshal(eventDTO)
 	if err != nil {
-		log.Printf("[ERROR] Failed to marshal API key revoked event DTO: gatewayID=%s correlationId=%s error=%v",
-			gatewayID, correlationID, err)
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
 	// Get all connections for this gateway
 	connections := s.manager.GetConnections(gatewayID)
 	if len(connections) == 0 {
-		log.Printf("[WARN] No active connections for gateway: gatewayID=%s correlationId=%s", gatewayID, correlationID)
 		return fmt.Errorf("no active connections for gateway: %s", gatewayID)
 	}
 
@@ -456,14 +445,12 @@ func (s *GatewayEventsService) broadcastAPIKeyUpdated(gatewayID string, event *m
 	// Serialize payload
 	payloadJSON, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("[ERROR] Failed to serialize API key updated event: gatewayID=%s error=%v", gatewayID, err)
 		return fmt.Errorf("failed to serialize API key updated event: %w", err)
 	}
 
 	// Validate payload size
 	if len(payloadJSON) > MaxEventPayloadSize {
 		err := fmt.Errorf("event payload exceeds maximum size: %d bytes (limit: %d bytes)", len(payloadJSON), MaxEventPayloadSize)
-		log.Printf("[ERROR] Payload size validation failed: gatewayID=%s size=%d error=%v", gatewayID, len(payloadJSON), err)
 		return err
 	}
 
@@ -478,15 +465,12 @@ func (s *GatewayEventsService) broadcastAPIKeyUpdated(gatewayID string, event *m
 	// Serialize complete event
 	eventJSON, err := json.Marshal(eventDTO)
 	if err != nil {
-		log.Printf("[ERROR] Failed to marshal API key updated event DTO: gatewayID=%s correlationId=%s error=%v",
-			gatewayID, correlationID, err)
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
 	// Get all connections for this gateway
 	connections := s.manager.GetConnections(gatewayID)
 	if len(connections) == 0 {
-		log.Printf("[WARN] No active connections for gateway: gatewayID=%s correlationId=%s", gatewayID, correlationID)
 		return fmt.Errorf("no active connections for gateway: %s", gatewayID)
 	}
 

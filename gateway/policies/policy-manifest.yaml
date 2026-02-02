@@ -5,7 +5,8 @@ policies:
   - name: advanced-ratelimit
     gomodule: github.com/wso2/gateway-controllers/policies/advanced-ratelimit@v0
   - name: api-key-auth
-    gomodule: github.com/wso2/gateway-controllers/policies/api-key-auth@v0
+    gomodule: github.com/Thushani-Jayasekera/gateway-controllers/policies/api-key-auth@v0.1.3
+    # gomodule: github.com/wso2/gateway-controllers/policies/api-key-auth@v0
   - name: aws-bedrock-guardrail
     gomodule: github.com/wso2/gateway-controllers/policies/aws-bedrock-guardrail@v0
   - name: azure-content-safety-content-moderation
