@@ -508,7 +508,7 @@ paths:
       description: |
         Update an existing API key with a new regenerated value. This allows
         rotating API keys with a predetermined value instead of auto-generating one.
-        The new key must be at least 16 characters long.
+        The new key must be at least 20 characters long.
       operationId: updateAPIKey
       tags:
         - API Management
@@ -2293,8 +2293,6 @@ components:
 
     APIKeyCreationRequest:
       type: object
-      required:
-        - displayName
       properties:
         displayName:
           type: string
@@ -2439,11 +2437,6 @@ components:
     APIKeyRegenerationRequest:
       type: object
       properties:
-        api_key:
-          type: string
-          description: The new API key value to set (minimum 16 characters)
-          example: "apip_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-          minLength: 16
         expires_in:
           type: object
           description: Expiration duration for the API key
@@ -2473,7 +2466,7 @@ components:
           example: "2026-12-08T10:30:00Z"
     APIKeyUpdateRequest:
       allOf:
-        - $ref: "#/components/schemas/APIKeyRegenerationRequest"
+        - $ref: "#/components/schemas/APIKeyCreationRequest"
       required:
         - api_key
     APIKeyRevocationResponse:

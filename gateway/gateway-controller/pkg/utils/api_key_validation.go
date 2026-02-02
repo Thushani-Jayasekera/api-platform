@@ -22,13 +22,15 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/constants"
 )
 
 const (
-	apiKeyNameMinLength = 3
-	apiKeyNameMaxLength = 63
+	apiKeyNameMinLength    = 3
+	apiKeyNameMaxLength    = 63
+	displayNameMaxLength   = 100
 )
 
 var (
@@ -43,35 +45,39 @@ var (
 // ValidateAPIKeyValue validates a plain API key value for creation or update.
 // Use this for both REST create/update and external events (apikey.created, apikey.updated).
 // Returns a descriptive error if the key is empty, too short, or too long.
+// Note: Expects the caller to trim whitespace before validation.
 func ValidateAPIKeyValue(plainKey string) error {
-	trimmed := strings.TrimSpace(plainKey)
-	if trimmed == "" {
+	if plainKey == "" {
 		return fmt.Errorf("API key cannot be empty")
 	}
-	if len(trimmed) < constants.MIN_API_KEY_LENGTH {
+	if len(plainKey) < constants.MIN_API_KEY_LENGTH {
 		return fmt.Errorf("API key is too short (minimum %d characters required)", constants.MIN_API_KEY_LENGTH)
 	}
-	if len(trimmed) > constants.MAX_API_KEY_LENGTH {
+	if len(plainKey) > constants.MAX_API_KEY_LENGTH {
 		return fmt.Errorf("API key is too long (maximum %d characters allowed)", constants.MAX_API_KEY_LENGTH)
 	}
 	return nil
 }
 
 // ValidateDisplayName validates the user-provided display name for an API key.
-// Display name must be 1-100 UTF-8 characters.
+// Display name must be 1-100 UTF-8 characters (counted by runes, not bytes).
+// Trims whitespace before validation.
 func ValidateDisplayName(displayName string) error {
 	trimmed := strings.TrimSpace(displayName)
 	if trimmed == "" {
 		return fmt.Errorf("display name cannot be empty")
 	}
-	if len(trimmed) > 100 {
-		return fmt.Errorf("display name is too long (maximum 100 characters allowed)")
+
+	runeCount := utf8.RuneCountInString(trimmed)
+	if runeCount > displayNameMaxLength {
+		return fmt.Errorf("display name is too long (%d characters, maximum %d allowed)", runeCount, displayNameMaxLength)
 	}
 	return nil
 }
 
 // GenerateAPIKeyName generates a URL-safe name from a display name.
 // Transforms the displayName by:
+// - Trimming whitespace
 // - Converting to lowercase
 // - Replacing spaces and underscores with hyphens
 // - Removing invalid characters
@@ -79,12 +85,9 @@ func ValidateDisplayName(displayName string) error {
 // - Trimming leading/trailing hyphens
 // - Enforcing length constraints (3-63 chars)
 func GenerateAPIKeyName(displayName string) (string, error) {
-	if strings.TrimSpace(displayName) == "" {
-		return "", fmt.Errorf("display name cannot be empty")
-	}
-
+	trimmed := strings.TrimSpace(displayName)
 	// Convert to lowercase
-	name := strings.ToLower(displayName)
+	name := strings.ToLower(trimmed)
 
 	// Replace spaces and underscores with hyphens
 	name = strings.ReplaceAll(name, " ", "-")

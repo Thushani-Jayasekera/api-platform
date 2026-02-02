@@ -2743,11 +2743,20 @@ func (s *APIServer) extractAuthenticatedUser(c *gin.Context, operationName strin
 
 // bindRequestBody binds the request body based on Content-Type header.
 // Supports both JSON and YAML content types.
+// Handles Content-Type headers case-insensitively and strips parameters (e.g., charset).
 func (s *APIServer) bindRequestBody(c *gin.Context, request interface{}) error {
 	contentType := c.GetHeader("Content-Type")
 
-	// Check for YAML content types
-	if strings.Contains(contentType, "application/yaml") || strings.Contains(contentType, "text/yaml") {
+	// Normalize the Content-Type: trim whitespace, split off parameters, and convert to lowercase
+	contentType = strings.TrimSpace(contentType)
+	if idx := strings.Index(contentType, ";"); idx != -1 {
+		contentType = contentType[:idx]
+	}
+	contentType = strings.TrimSpace(contentType)
+	contentType = strings.ToLower(contentType)
+
+	// Check for YAML content types (case-insensitive, normalized)
+	if contentType == "application/yaml" || contentType == "text/yaml" {
 		return c.ShouldBindYAML(request)
 	}
 

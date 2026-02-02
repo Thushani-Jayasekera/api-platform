@@ -591,7 +591,7 @@ func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateRe
 
 	// Update xDS snapshot to propagate to policy engine
 	if s.xdsManager != nil {
-		if err := s.xdsManager.StoreAPIKey(apiId, apiName, apiVersion, existingKey, params.CorrelationID); err != nil {
+		if err := s.xdsManager.StoreAPIKey(apiId, apiName, apiVersion, updatedKey, params.CorrelationID); err != nil {
 			logger.Error("Failed to send updated API key to policy engine",
 				slog.Any("error", err))
 			return nil, fmt.Errorf("failed to send updated API key to policy engine: %w", err)
@@ -963,8 +963,8 @@ func (s *APIKeyService) createAPIKeyFromRequest(handle string, request *api.APIK
 
 	// Get displayName from request (required field)
 	displayName := fmt.Sprintf("%s-key-%s", handle, id[:8]) // Default display name and name
-	if strings.TrimSpace(request.DisplayName) != "" {
-		displayName = strings.TrimSpace(request.DisplayName)
+	if request.DisplayName != nil && strings.TrimSpace(*request.DisplayName) != "" {
+		displayName = strings.TrimSpace(*request.DisplayName)
 	}
 
 	// Validate displayName
@@ -1162,15 +1162,19 @@ func (s *APIKeyService) updateAPIKeyFromRequest(existingKey *models.APIKey, requ
 	// Generate new API key value
 	plainAPIKeyValue := strings.TrimSpace(*request.ApiKey)
 
+	if request.ApiKey == nil || strings.TrimSpace(*request.ApiKey) == "" {
+		return nil, fmt.Errorf("api_key is required for update")
+	}
+
 	if err := ValidateAPIKeyValue(plainAPIKeyValue); err != nil {
 		return nil, fmt.Errorf("invalid API key value: %w", err)
 	}
 
-	if err := ValidateDisplayName(request.DisplayName); err != nil {
+	if err := ValidateDisplayName(*request.DisplayName); err != nil {
 		return nil, fmt.Errorf("invalid display name: %w", err)
 	}
 
-	displayName := strings.TrimSpace(request.DisplayName)
+	displayName := strings.TrimSpace(*request.DisplayName)
 
 	operations := "[\"*\"]" // Default to all operations
 
@@ -1886,7 +1890,7 @@ func (s *APIKeyService) CreateExternalAPIKeyFromEvent(
 ) (*APIKeyCreationResult, error) {
 	logger.Info("Creating external API key from event",
 		slog.String("api_id", handle),
-		slog.String("key_name", request.DisplayName),
+		slog.String("key_name", *request.DisplayName),
 		slog.Bool("has_expiry", request.ExpiresAt != nil),
 	)
 
@@ -1943,6 +1947,7 @@ func (s *APIKeyService) RevokeExternalAPIKeyFromEvent(
 // This is used when platform-api broadcasts an apikey.updated event.
 func (s *APIKeyService) UpdateExternalAPIKeyFromEvent(
 	handle string,
+	apiKeyName string,
 	request *api.APIKeyCreationRequest,
 	user string,
 	correlationID string,
@@ -1951,6 +1956,7 @@ func (s *APIKeyService) UpdateExternalAPIKeyFromEvent(
 
 	apiKeyUpdateParams := APIKeyUpdateParams{
 		Handle: handle,
+		APIKeyName: apiKeyName,
 		Request: *request,
 		User: &commonmodels.AuthContext{
 			UserID: user,
@@ -1964,7 +1970,7 @@ func (s *APIKeyService) UpdateExternalAPIKeyFromEvent(
 			slog.String("correlation_id", correlationID),
 			slog.String("user_id", user),
 			slog.String("api_id", handle),
-			slog.String("key_name", request.DisplayName),
+			slog.String("key_name", *request.DisplayName),
 		)
 		return err
 	}

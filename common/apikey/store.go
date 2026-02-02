@@ -152,11 +152,7 @@ func (aks *APIkeyStore) StoreAPIKey(apiId string, apiKey *APIKey) error {
 			if oldKey.IndexKey != "" {
 				oldIndexKey = oldKey.IndexKey
 			} else {
-				trimmedAPIKey := strings.TrimSpace(oldKey.APIKey)
-				if trimmedAPIKey == "" {
-					return fmt.Errorf("API key is empty")
-				}
-				oldIndexKey = computeExternalKeyIndexKey(trimmedAPIKey)
+				oldIndexKey = computeExternalKeyIndexKey(oldKey.APIKey)
 				if oldIndexKey == "" {
 					return fmt.Errorf("failed to compute index key")
 				}
@@ -219,15 +215,14 @@ func (aks *APIkeyStore) ValidateAPIKey(apiId, apiOperation, operationMethod, pro
 		}
 	}
 
-	trimmedAPIKey := strings.TrimSpace(providedAPIKey)
-	if trimmedAPIKey == "" {
-		return false, fmt.Errorf("API key is empty")
-	}
-
 	// If not found via local key lookup, try external key index for O(1) lookup
 	if targetAPIKey == nil {
 		// Compute the index key for external key lookup
-		indexKey := computeExternalKeyIndexKey(trimmedAPIKey)
+		indexKey := computeExternalKeyIndexKey(providedAPIKey)
+		if indexKey == "" {
+			return false, fmt.Errorf("API key is empty")
+		}
+		trimmedAPIKey := strings.TrimSpace(providedAPIKey)
 		keyID, exists := aks.externalKeyIndex[apiId][indexKey]
 		if exists {
 			// Found in index, retrieve the key
@@ -346,11 +341,7 @@ func (aks *APIkeyStore) RemoveAPIKeysByAPI(apiId string) error {
 			if apiKey.IndexKey != "" {
 				indexKey = apiKey.IndexKey
 			} else {
-				trimmedAPIKey := strings.TrimSpace(apiKey.APIKey)
-				if trimmedAPIKey == "" {
-					return fmt.Errorf("API key is empty")
-				}
-				indexKey = computeExternalKeyIndexKey(trimmedAPIKey)
+				indexKey = computeExternalKeyIndexKey(apiKey.APIKey)
 				if indexKey == "" {
 					return fmt.Errorf("failed to compute index key")
 				}
@@ -564,11 +555,7 @@ func (aks *APIkeyStore) removeFromAPIMapping(apiKey *APIKey) {
 		if apiKey.IndexKey != "" {
 			indexKey = apiKey.IndexKey
 		} else {
-			trimmedAPIKey := strings.TrimSpace(apiKey.APIKey)
-			if trimmedAPIKey == "" {
-				return
-			}
-			indexKey = computeExternalKeyIndexKey(trimmedAPIKey)
+			indexKey = computeExternalKeyIndexKey(apiKey.APIKey)
 			if indexKey == "" {
 				return
 			}

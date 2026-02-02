@@ -530,11 +530,17 @@ func (cs *ConfigStore) StoreAPIKey(apiKey *models.APIKey) error {
 	if existingKeyID != "" {
 		// Update the existing entry in apiKeysByAPI and externalKeyIndex
 		delete(cs.apiKeysByAPI[apiKey.APIId], existingKeyID)
-		if apiKey.Source == "external" {
+		if apiKey.Source == "external" && apiKey.IndexKey != nil {
 			delete(cs.externalKeyIndex[apiKey.APIId], *apiKey.IndexKey)
 		}
 		cs.apiKeysByAPI[apiKey.APIId][apiKey.ID] = apiKey // in API key rotation scenario apiKey.ID = existingKeyID
 		if apiKey.Source == "external" {
+			if apiKey.IndexKey == nil {
+				return fmt.Errorf("external API key must have IndexKey set")
+			}
+			if cs.externalKeyIndex[apiKey.APIId] == nil {
+				cs.externalKeyIndex[apiKey.APIId] = make(map[string]*string)
+			}
 			cs.externalKeyIndex[apiKey.APIId][*apiKey.IndexKey] = &apiKey.ID
 		}
 	} else {
@@ -557,6 +563,12 @@ func (cs *ConfigStore) StoreAPIKey(apiKey *models.APIKey) error {
 		// Store API key by API ID and API key ID and externalKeyIndex
 		cs.apiKeysByAPI[apiKey.APIId][apiKey.ID] = apiKey
 		if apiKey.Source == "external" {
+			if apiKey.IndexKey == nil {
+				return fmt.Errorf("external API key must have IndexKey set")
+			}
+			if cs.externalKeyIndex[apiKey.APIId] == nil {
+				cs.externalKeyIndex[apiKey.APIId] = make(map[string]*string)
+			}
 			cs.externalKeyIndex[apiKey.APIId][*apiKey.IndexKey] = &apiKey.ID
 		}
 	}

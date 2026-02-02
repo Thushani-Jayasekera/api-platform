@@ -43,7 +43,7 @@ type APIDeployedEvent struct {
 	CorrelationID string                  `json:"correlationId"`
 }
 
-// APIKeyCreatedEventPayload represents the payload of an API key created event
+// APIKeyCreatedEventPayload represents the payload of an API key created event.
 type APIKeyCreatedEventPayload struct {
 	ApiId         string  `json:"apiId"`
 	ApiKey        string  `json:"apiKey"` // Plain text API key (will be hashed by gateway)
@@ -51,16 +51,39 @@ type APIKeyCreatedEventPayload struct {
 	Operations    string  `json:"operations"`
 	ExpiresAt     *string `json:"expiresAt,omitempty"` // ISO 8601 format
 	ExpiresIn     *struct {
-		Duration int `json:"duration,omitempty"`
+		Duration int    `json:"duration,omitempty"`
 		Unit     string `json:"unit,omitempty"`
 	} `json:"expiresIn,omitempty"`
-	DisplayName   *string `json:"displayName,omitempty"`
+	DisplayName *string `json:"displayName,omitempty"`
 }
 
 // APIKeyCreatedEvent represents the complete API key created event
 type APIKeyCreatedEvent struct {
 	Type          string                    `json:"type"`
 	Payload       APIKeyCreatedEventPayload `json:"payload"`
+	Timestamp     string                    `json:"timestamp"`
+	CorrelationID string                    `json:"correlationId"`
+	UserId        string                    `json:"userId"`
+}
+
+type APIKeyUpdatedEventPayload struct {
+	ApiId         string  `json:"apiId"`
+	KeyName       string  `json:"keyName"`
+	ApiKey        string  `json:"apiKey"` // Plain text API key (will be hashed by gateway)
+	ExternalRefId string `json:"externalRefId"`
+	Operations    string  `json:"operations"`
+	ExpiresAt     *string `json:"expiresAt,omitempty"` // ISO 8601 format
+	ExpiresIn     *struct {
+		Duration int    `json:"duration,omitempty"`
+		Unit     string `json:"unit,omitempty"`
+	} `json:"expiresIn,omitempty"`
+	DisplayName string `json:"displayName"`
+}
+
+// APIKeyUpdatedEvent represents the complete API key updated event
+type APIKeyUpdatedEvent struct {
+	Type          string                    `json:"type"`
+	Payload       APIKeyUpdatedEventPayload `json:"payload"`
 	Timestamp     string                    `json:"timestamp"`
 	CorrelationID string                    `json:"correlationId"`
 	UserId        string                    `json:"userId"`
