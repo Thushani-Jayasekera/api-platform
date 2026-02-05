@@ -141,7 +141,13 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
     -- External API key support (added in schema version 6)
     source TEXT NOT NULL DEFAULT 'local',  -- 'local' or 'external'
-    external_ref_id TEXT NULL,  -- Cloud APIM key ID or other external reference
+    external_ref_id TEXT NULL,  -- external reference
+
+    -- O(1) lookup optimization for external keys
+    index_key TEXT NULL,  -- Pre-computed SHA-256 hash for fast lookup
+
+    -- Human-readable display name for the API key
+    display_name TEXT NOT NULL DEFAULT '',
 
     -- O(1) lookup optimization for external keys
     index_key TEXT NULL,  -- Pre-computed SHA-256 hash for fast lookup

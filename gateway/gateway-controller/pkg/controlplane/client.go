@@ -681,7 +681,6 @@ func (c *Client) handleAPIKeyCreatedEvent(event map[string]interface{}) {
 	var duration *int
 	now := time.Now()
 
-
 	apiKeyCreationRequest := api.APIKeyCreationRequest{
 		ApiKey:        &payload.ApiKey,
 		DisplayName:   payload.DisplayName,
@@ -698,9 +697,8 @@ func (c *Client) handleAPIKeyCreatedEvent(event map[string]interface{}) {
 			return
 		}
 		if parsedExpiresAt.Before(now) {
-			logger.Error("API key expiration time must be in the future",
-				slog.String("expires_at", parsedExpiresAt.Format(time.RFC3339)),
-				slog.String("now", now.Format(time.RFC3339)))
+			logger.Error("API key expiration time must be in the future, got: %s (current time: %s)",
+				parsedExpiresAt.Format(time.RFC3339), now.Format(time.RFC3339))
 			return
 		}
 		// If expires_at is explicitly provided, use it
@@ -723,7 +721,7 @@ func (c *Client) handleAPIKeyCreatedEvent(event map[string]interface{}) {
 		case string(api.APIKeyCreationRequestExpiresInUnitMonths):
 			timeDuration *= 30 * 24 * time.Hour // Approximate month as 30 days
 		default:
-			logger.Error("Unsupported expiration unit", slog.Any("expires_in.unit", payload.ExpiresIn.Unit))
+			logger.Error("Unsupported expiration unit: %s", slog.Any("expires_in.unit", payload.ExpiresIn.Unit))
 			return
 		}
 		expiry := now.Add(timeDuration)
@@ -902,9 +900,8 @@ func (c *Client) handleAPIKeyUpdatedEvent(event map[string]interface{}) {
 			return
 		}
 		if parsedExpiresAt.Before(now) {
-			logger.Error("API key expiration time must be in the future",
-				slog.String("expires_at", parsedExpiresAt.Format(time.RFC3339)),
-				slog.String("now", now.Format(time.RFC3339)))
+			logger.Error("API key expiration time must be in the future, got: %s (current time: %s)",
+				parsedExpiresAt.Format(time.RFC3339), now.Format(time.RFC3339))
 			return
 		}
 		// If expires_at is explicitly provided, use it
@@ -927,7 +924,7 @@ func (c *Client) handleAPIKeyUpdatedEvent(event map[string]interface{}) {
 		case string(api.APIKeyCreationRequestExpiresInUnitMonths):
 			timeDuration *= 30 * 24 * time.Hour // Approximate month as 30 days
 		default:
-			logger.Error("Unsupported expiration unit", slog.Any("expires_in.unit", payload.ExpiresIn.Unit))
+			logger.Error("Unsupported expiration unit: %s", slog.Any("expires_in.unit", payload.ExpiresIn.Unit))
 			return
 		}
 		expiry := now.Add(timeDuration)

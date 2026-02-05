@@ -269,6 +269,7 @@ Generate a new API key for a specific API.
 | Field                | Type | Required | Description |
 |----------------------|------|----------|-------------|
 | `displayName`               | string | No | Custom name for the API key. If not provided, a default name will be generated |
+| `name`               | string | No | Identifier of the API key. If not provided, a default identifier will be generated |
 | `expires_at`         | string (ISO 8601) | No | Specific expiration timestamp for the API key. If both `expires_in` and `expires_at` are provided, `expires_at` takes precedence |
 | `expires_in`         | object | No | Relative expiration time from creation |
 | `expires_in.duration` | integer | Yes (if expiresIn used) | Duration value |
@@ -444,7 +445,7 @@ curl -X POST "http://localhost:9090/apis/weather-api-v1.0/api-keys" \
 | `api_key.name` | string | Identifier of the generated API key                  |
 | `api_key.displayName` | string | Display name of the generated API key                  |
 | `api_key.apiId` | string | API identifier                                 |
-| `api_key.api_key` | string | The actual API key value (starts with `apip_`) |
+| `api_key.api_key` | string | The actual API key value (format may vary) |
 | `api_key.status` | string | Key status (`active`)                          |
 | `api_key.created_at` | string | ISO 8601 timestamp of creation                 |
 | `api_key.created_by` | string | User who created the key                       |

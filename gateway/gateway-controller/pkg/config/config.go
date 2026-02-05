@@ -53,6 +53,9 @@ type AnalyticsConfig struct {
 	Publishers           []map[string]interface{} `koanf:"publishers"`
 	GRPCAccessLogCfg     GRPCAccessLogConfig      `koanf:"grpc_access_logs"`
 	AccessLogsServiceCfg AccessLogsServiceConfig  `koanf:"access_logs_service"`
+	// AllowPayloads controls whether request and response bodies are captured
+	// into analytics metadata and forwarded to analytics publishers.
+	AllowPayloads        bool 					  `koanf:"allow_payloads"`
 }
 
 // AccessLogsServiceConfig holds the access logs service configuration
@@ -340,6 +343,8 @@ type ControlPlaneConfig struct {
 type APIKeyConfig struct {
 	APIKeysPerUserPerAPI int    `koanf:"api_keys_per_user_per_api"` // Number of API keys allowed per user per API
 	Algorithm            string `koanf:"algorithm"`                 // Hashing algorithm to use
+	MinKeyLength         int    `koanf:"min_key_length"`            // Minimum length for external API key values
+	MaxKeyLength         int    `koanf:"max_key_length"`            // Maximum length for external API key values
 }
 
 // LoadConfig loads configuration from file, environment variables, and defaults
@@ -419,6 +424,11 @@ func defaultConfig() *Config {
 			PolicyServer: PolicyServerConfig{
 				Enabled: true,
 				Port:    18001,
+				TLS: PolicyServerTLS{
+					Enabled:  false,
+					CertFile: "./certs/server.crt",
+					KeyFile:  "./certs/server.key",
+				},
 			},
 			Policies: PoliciesConfig{
 				DefinitionsPath: "./default-policies",
@@ -427,7 +437,7 @@ func defaultConfig() *Config {
 				TemplateDefinitionsPath: "./default-llm-provider-templates",
 			},
 			Storage: StorageConfig{
-				Type: "memory",
+				Type: "sqlite",
 				SQLite: SQLiteConfig{
 					Path: "./data/gateway.db",
 				},
@@ -469,20 +479,23 @@ func defaultConfig() *Config {
 						"\"%REQ(:AUTHORITY)%\" \"%UPSTREAM_HOST%\"\n",
 				},
 				ListenerPort: 8080,
-				HTTPSEnabled: false,
+				HTTPSEnabled: true,
 				HTTPSPort:    8443,
 				DownstreamTLS: DownstreamTLS{
-					CertPath:               "./listener-certs/server.crt",
-					KeyPath:                "./listener-certs/server.key",
+					CertPath:               "./listener-certs/default-listener.crt",
+					KeyPath:                "./listener-certs/default-listener.key",
 					MinimumProtocolVersion: "TLS1_2",
 					MaximumProtocolVersion: "TLS1_3",
 					Ciphers:                "ECDHE-ECDSA-AES128-GCM-SHA256,ECDHE-RSA-AES128-GCM-SHA256,ECDHE-ECDSA-AES128-SHA,ECDHE-RSA-AES128-SHA,AES128-GCM-SHA256,AES128-SHA,ECDHE-ECDSA-AES256-GCM-SHA384,ECDHE-RSA-AES256-GCM-SHA384,ECDHE-ECDSA-AES256-SHA,ECDHE-RSA-AES256-SHA,AES256-GCM-SHA384,AES256-SHA",
 				},
-				GatewayHost: "localhost",
+				GatewayHost: "*",
 				Upstream: envoyUpstream{
 					TLS: upstreamTLS{
 						MinimumProtocolVersion: "TLS1_2",
 						MaximumProtocolVersion: "TLS1_3",
+						Ciphers:                "ECDHE-ECDSA-AES128-GCM-SHA256,ECDHE-RSA-AES128-GCM-SHA256,ECDHE-ECDSA-AES128-SHA,ECDHE-RSA-AES128-SHA,AES128-GCM-SHA256,AES128-SHA,ECDHE-ECDSA-AES256-GCM-SHA384,ECDHE-RSA-AES256-GCM-SHA384,ECDHE-ECDSA-AES256-SHA,ECDHE-RSA-AES256-SHA,AES256-GCM-SHA384,AES256-SHA",
+						TrustedCertPath:        "/etc/ssl/certs/ca-certificates.crt",
+						CustomCertsPath:        "./certificates",
 						VerifyHostName:         true,
 						DisableSslVerification: false,
 					},
@@ -493,15 +506,15 @@ func defaultConfig() *Config {
 					},
 				},
 				PolicyEngine: PolicyEngineConfig{
-					Enabled:           false,
-					Host:              "localhost",
+					Enabled:           true,
+					Host:              "policy-engine",
 					Port:              9001,
-					TimeoutMs:         250,
+					TimeoutMs:         60000,
 					FailureModeAllow:  false,
 					RouteCacheAction:  "RETAIN",
 					AllowModeOverride: true,
 					RequestHeaderMode: "SEND",
-					MessageTimeoutMs:  250,
+					MessageTimeoutMs:  60000,
 					TLS: PolicyEngineTLS{
 						Enabled:    false,
 						CertPath:   "",
@@ -553,11 +566,13 @@ func defaultConfig() *Config {
 			APIKey: APIKeyConfig{
 				APIKeysPerUserPerAPI: 10,
 				Algorithm:            constants.HashingAlgorithmSHA256,
+				MinKeyLength:         constants.DefaultMinAPIKeyLength,
+				MaxKeyLength:         constants.DefaultMaxAPIKeyLength,
 			},
 		},
 		Analytics: AnalyticsConfig{
-			Enabled:    false,
-			Publishers: make([]map[string]interface{}, 0),
+			Enabled:       false,
+			Publishers:    make([]map[string]interface{}, 0),
 			GRPCAccessLogCfg: GRPCAccessLogConfig{
 				Host:                "policy-engine",
 				LogName:             "envoy_access_log",
@@ -574,6 +589,7 @@ func defaultConfig() *Config {
 				MaxMessageSize:  1000000000,
 				MaxHeaderLimit:  8192,
 			},
+			AllowPayloads: false,
 		},
 		TracingConfig: TracingConfig{
 			Enabled:            false,
@@ -1205,6 +1221,19 @@ func (c *Config) validateAPIKeyConfig() error {
 		return fmt.Errorf("api_key.api_keys_per_user_per_api must be a positive integer, got: %d",
 			c.GatewayController.APIKey.APIKeysPerUserPerAPI)
 	}
+
+	// Default min/max key lengths if not configured
+	if c.GatewayController.APIKey.MinKeyLength <= 0 {
+		c.GatewayController.APIKey.MinKeyLength = constants.DefaultMinAPIKeyLength
+	}
+	if c.GatewayController.APIKey.MaxKeyLength <= 0 {
+		c.GatewayController.APIKey.MaxKeyLength = constants.DefaultMaxAPIKeyLength
+	}
+	if c.GatewayController.APIKey.MinKeyLength > c.GatewayController.APIKey.MaxKeyLength {
+		return fmt.Errorf("api_key.min_key_length (%d) must not exceed api_key.max_key_length (%d)",
+			c.GatewayController.APIKey.MinKeyLength, c.GatewayController.APIKey.MaxKeyLength)
+	}
+
 	// If hashing is enabled but no algorithm is provided, default to SHA256
 	if c.GatewayController.APIKey.Algorithm == "" {
 		c.GatewayController.APIKey.Algorithm = constants.HashingAlgorithmSHA256

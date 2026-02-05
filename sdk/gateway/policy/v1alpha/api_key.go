@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -40,9 +41,9 @@ type APIKey struct {
 	// Name of the API key (URL-safe identifier, auto-generated, immutable)
 	Name string `json:"name" yaml:"name"`
 	// DisplayName is the human-readable name (user-provided, mutable)
-	DisplayName string `json:"display_name" yaml:"display_name"`
+	DisplayName string `json:"displayName" yaml:"displayName"`
 	// ApiKey API key with apip_ prefix
-	APIKey string `json:"api_key" yaml:"api_key"`
+	APIKey string `json:"apiKey" yaml:"apiKey"`
 	// APIId Unique identifier of the API that the key is associated with
 	APIId string `json:"apiId" yaml:"apiId"`
 	// Operations List of API operations the key will have access to
@@ -50,17 +51,17 @@ type APIKey struct {
 	// Status of the API key
 	Status APIKeyStatus `json:"status" yaml:"status"`
 	// CreatedAt Timestamp when the API key was generated
-	CreatedAt time.Time `json:"created_at" yaml:"created_at"`
+	CreatedAt time.Time `json:"createdAt" yaml:"createdAt"`
 	// CreatedBy User who created the API key
-	CreatedBy string `json:"created_by" yaml:"created_by"`
+	CreatedBy string `json:"createdBy" yaml:"createdBy"`
 	// UpdatedAt Timestamp when the API key was last updated
-	UpdatedAt time.Time `json:"updated_at" yaml:"updated_at"`
+	UpdatedAt time.Time `json:"updatedAt" yaml:"updatedAt"`
 	// ExpiresAt Expiration timestamp (null if no expiration)
-	ExpiresAt *time.Time `json:"expires_at" yaml:"expires_at"`
+	ExpiresAt *time.Time `json:"expiresAt" yaml:"expiresAt"`
 	// Source tracking for external key support ("local" | "external")
 	Source string `json:"source" yaml:"source"`
 	// IndexKey Pre-computed hash for O(1) lookup (external plain text keys only)
-	IndexKey string `json:"index_key" yaml:"index_key"`
+	IndexKey string `json:"indexKey" yaml:"indexKey"`
 }
 
 // APIKeyStatus Status of the API key
@@ -127,6 +128,10 @@ func (aks *APIkeyStore) StoreAPIKey(apiId string, apiKey *APIKey) error {
 	if apiKey == nil {
 		return fmt.Errorf("API key cannot be nil")
 	}
+	// External keys require non-empty IndexKey for fast lookup; fail fast before any writes
+	if apiKey.Source == "external" && strings.TrimSpace(apiKey.IndexKey) == "" {
+		return fmt.Errorf("external API key requires non-empty IndexKey for fast lookup")
+	}
 
 	aks.mu.Lock()
 	defer aks.mu.Unlock()
@@ -145,19 +150,18 @@ func (aks *APIkeyStore) StoreAPIKey(apiId string, apiKey *APIKey) error {
 	}
 
 	if existingKeyID != "" {
-		// Remove old external key index entry if it exists
+		// Remove old external key index entry if it exists (use IndexKey only; do not compute from APIKey for external keys—APIKey may be hashed)
 		oldKey := aks.apiKeysByAPI[apiId][existingKeyID]
 		if oldKey != nil && oldKey.Source == "external" {
-			var oldIndexKey string
 			if oldKey.IndexKey != "" {
-				oldIndexKey = oldKey.IndexKey
-			} else {
-				oldIndexKey = computeExternalKeyIndexKey(oldKey.APIKey)
-				if oldIndexKey == "" {
-					return fmt.Errorf("failed to compute index key")
+				if aks.externalKeyIndex[apiId] != nil {
+					delete(aks.externalKeyIndex[apiId], oldKey.IndexKey)
 				}
+			} else {
+				// Legacy external key with hashed APIKey and no IndexKey; cannot compute index from hash—skip delete to avoid removing wrong entry
+				log.Printf("[WARN] legacy external API key missing IndexKey during replace: apiId=%s existingKeyID=%s (index entry not removed; consider re-storing key with IndexKey set for cleanup)",
+					apiId, existingKeyID)
 			}
-			delete(aks.externalKeyIndex[apiId], oldIndexKey)
 		}
 
 		// Update the existing entry in apiKeysByAPI
@@ -301,9 +305,10 @@ func (aks *APIkeyStore) RevokeAPIKey(apiId, providedAPIKey string) error {
 	// If not found via local key lookup, try external key index for O(1) lookup
 	if matchedKey == nil {
 		indexKey := computeExternalKeyIndexKey(providedAPIKey)
+		trimmedAPIKey := strings.TrimSpace(providedAPIKey)
 		if keyID, exists := aks.externalKeyIndex[apiId][indexKey]; exists {
 			if apiKey, ok := aks.apiKeysByAPI[apiId][*keyID]; ok {
-				if apiKey.Source == "external" && compareAPIKeys(providedAPIKey, apiKey.APIKey) {
+				if apiKey.Source == "external" && compareAPIKeys(trimmedAPIKey, apiKey.APIKey) {
 					matchedKey = apiKey
 				}
 			}
@@ -336,16 +341,13 @@ func (aks *APIkeyStore) RemoveAPIKeysByAPI(apiId string) error {
 	// Remove from external key index
 	for _, apiKey := range apiKeys {
 		if apiKey.Source == "external" {
-			var indexKey string
 			if apiKey.IndexKey != "" {
-				indexKey = apiKey.IndexKey
+				delete(aks.externalKeyIndex[apiKey.APIId], apiKey.IndexKey)
 			} else {
-				indexKey = computeExternalKeyIndexKey(apiKey.APIKey)
-				if indexKey == "" {
-					return fmt.Errorf("failed to compute index key")
-				}
+				// Legacy external key with hashed APIKey and no IndexKey; cannot compute index from hash—skip delete to avoid removing wrong entry
+				log.Printf("[WARN] legacy external API key missing IndexKey during RemoveAPIKeysByAPI: apiId=%s keyID=%s (index entry not removed; consider re-storing key with IndexKey set for cleanup)",
+					apiKey.APIId, apiKey.ID)
 			}
-			delete(aks.externalKeyIndex[apiKey.APIId], indexKey)
 		}
 	}
 
@@ -550,15 +552,12 @@ func (aks *APIkeyStore) removeFromAPIMapping(apiKey *APIKey) {
 		if aks.externalKeyIndex[apiKey.APIId] == nil {
 			return
 		}
-		var indexKey string
 		if apiKey.IndexKey != "" {
-			indexKey = apiKey.IndexKey
+			delete(aks.externalKeyIndex[apiKey.APIId], apiKey.IndexKey)
 		} else {
-			indexKey = computeExternalKeyIndexKey(apiKey.APIKey)
-			if indexKey == "" {
-				return
-			}
+			// Legacy external key with hashed APIKey and no IndexKey; cannot compute index from hash—skip delete to avoid removing wrong entry
+			log.Printf("[WARN] legacy external API key missing IndexKey during removeFromAPIMapping: apiId=%s keyID=%s (index entry not removed; consider re-storing key with IndexKey set for cleanup)",
+				apiKey.APIId, apiKey.ID)
 		}
-		delete(aks.externalKeyIndex[apiKey.APIId], indexKey)
 	}
 }
