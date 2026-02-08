@@ -128,26 +128,20 @@ type LLMProviderTemplate struct {
 
 // LLMProvider represents an LLM provider entity
 type LLMProvider struct {
-	UUID             string                 `json:"uuid" db:"uuid"`
-	OrganizationUUID string                 `json:"organizationId" db:"organization_uuid"`
-	ID               string                 `json:"id" db:"handle"`
-	Name             string                 `json:"name" db:"name"`
-	Description      string                 `json:"description,omitempty" db:"description"`
-	CreatedBy        string                 `json:"createdBy,omitempty" db:"created_by"`
-	Version          string                 `json:"version" db:"version"`
-	Context          string                 `json:"context,omitempty" db:"context"`
-	VHost            string                 `json:"vhost,omitempty" db:"vhost"`
-	Template         string                 `json:"template" db:"template"`
-	Upstream         *UpstreamConfig        `json:"upstream,omitempty" db:"-"`
-	OpenAPISpec      string                 `json:"openapi,omitempty" db:"openapi_spec"`
-	ModelProviders   []LLMModelProvider     `json:"modelProviders,omitempty" db:"-"`
-	RateLimiting     *LLMRateLimitingConfig `json:"rateLimiting,omitempty" db:"-"`
-	AccessControl    *LLMAccessControl      `json:"accessControl" db:"-"`
-	Policies         []LLMPolicy            `json:"policies,omitempty" db:"-"`
-	Status           string                 `json:"status" db:"status"`
-	CreatedAt        time.Time              `json:"createdAt" db:"created_at"`
-	UpdatedAt        time.Time              `json:"updatedAt" db:"updated_at"`
-	Configuration    LLMProviderConfig      `json:"configuration" db:"configuration"`
+	UUID             string             `json:"uuid" db:"uuid"`
+	OrganizationUUID string             `json:"organizationId" db:"organization_uuid"`
+	ID               string             `json:"id" db:"handle"`
+	Name             string             `json:"name" db:"name"`
+	Description      string             `json:"description,omitempty" db:"description"`
+	CreatedBy        string             `json:"createdBy,omitempty" db:"created_by"`
+	Version          string             `json:"version" db:"version"`
+	Template         string             `json:"template" db:"template"`
+	OpenAPISpec      string             `json:"openapi,omitempty" db:"openapi_spec"`
+	ModelProviders   []LLMModelProvider `json:"modelProviders,omitempty" db:"-"`
+	Status           string             `json:"status" db:"status"`
+	CreatedAt        time.Time          `json:"createdAt" db:"created_at"`
+	UpdatedAt        time.Time          `json:"updatedAt" db:"updated_at"`
+	Configuration    LLMProviderConfig  `json:"configuration" db:"configuration"`
 }
 
 type LLMProviderConfig struct {
@@ -172,12 +166,8 @@ type LLMProxy struct {
 	Description      string         `json:"description,omitempty" db:"description"`
 	CreatedBy        string         `json:"createdBy,omitempty" db:"created_by"`
 	Version          string         `json:"version" db:"version"`
-	Context          string         `json:"context,omitempty" db:"context"`
-	VHost            string         `json:"vhost,omitempty" db:"vhost"`
-	Provider         string         `json:"provider" db:"provider"`
 	ProviderUUID     string         `json:"providerUuid" db:"provider_uuid"`
 	OpenAPISpec      string         `json:"openapi,omitempty" db:"openapi_spec"`
-	Policies         []LLMPolicy    `json:"policies,omitempty" db:"-"`
 	Status           string         `json:"status" db:"status"`
 	CreatedAt        time.Time      `json:"createdAt" db:"created_at"`
 	UpdatedAt        time.Time      `json:"updatedAt" db:"updated_at"`

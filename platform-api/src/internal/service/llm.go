@@ -258,6 +258,7 @@ func (s *LLMProviderService) Create(orgUUID, createdBy string, req *dto.LLMProvi
 		return nil, constants.ErrLLMProviderExists
 	}
 
+	contextValue := defaultString(req.Context, "/")
 	m := &model.LLMProvider{
 		OrganizationUUID: orgUUID,
 		ID:               req.ID,
@@ -265,16 +266,18 @@ func (s *LLMProviderService) Create(orgUUID, createdBy string, req *dto.LLMProvi
 		Description:      req.Description,
 		CreatedBy:        createdBy,
 		Version:          req.Version,
-		Context:          defaultString(req.Context, "/"),
-		VHost:            req.VHost,
 		Template:         req.Template,
-		Upstream:         mapUpstreamConfig(req.Upstream),
 		OpenAPISpec:      req.OpenAPI,
 		ModelProviders:   mapModelProviders(req.ModelProviders),
-		AccessControl:    mapAccessControl(&req.AccessControl),
-		RateLimiting:     mapRateLimiting(req.RateLimiting),
-		Policies:         mapPolicies(req.Policies),
 		Status:           llmStatusPending,
+		Configuration: model.LLMProviderConfig{
+			Context:       &contextValue,
+			VHost:         &req.VHost,
+			Upstream:      mapUpstreamConfig(req.Upstream),
+			AccessControl: mapAccessControl(&req.AccessControl),
+			RateLimiting:  mapRateLimiting(req.RateLimiting),
+			Policies:      mapPolicies(req.Policies),
+		},
 	}
 
 	if err := s.repo.Create(m); err != nil {
@@ -371,22 +374,25 @@ func (s *LLMProviderService) Update(orgUUID, handle string, req *dto.LLMProvider
 		return nil, constants.ErrLLMProviderTemplateNotFound
 	}
 
+	contextValue := defaultString(req.Context, "/")
 	m := &model.LLMProvider{
 		OrganizationUUID: orgUUID,
 		ID:               handle,
 		Name:             req.Name,
 		Description:      req.Description,
 		Version:          req.Version,
-		Context:          defaultString(req.Context, "/"),
-		VHost:            req.VHost,
 		Template:         req.Template,
-		Upstream:         mapUpstreamConfig(req.Upstream),
 		OpenAPISpec:      req.OpenAPI,
 		ModelProviders:   mapModelProviders(req.ModelProviders),
-		AccessControl:    mapAccessControl(&req.AccessControl),
-		RateLimiting:     mapRateLimiting(req.RateLimiting),
-		Policies:         mapPolicies(req.Policies),
 		Status:           llmStatusPending,
+		Configuration: model.LLMProviderConfig{
+			Context:       &contextValue,
+			VHost:         &req.VHost,
+			Upstream:      mapUpstreamConfig(req.Upstream),
+			AccessControl: mapAccessControl(&req.AccessControl),
+			RateLimiting:  mapRateLimiting(req.RateLimiting),
+			Policies:      mapPolicies(req.Policies),
+		},
 	}
 
 	if err := s.repo.Update(m); err != nil {
@@ -453,6 +459,7 @@ func (s *LLMProxyService) Create(orgUUID, createdBy string, req *dto.LLMProxy) (
 		return nil, constants.ErrLLMProxyExists
 	}
 
+	contextValue := defaultString(req.Context, "/")
 	m := &model.LLMProxy{
 		OrganizationUUID: orgUUID,
 		ProjectUUID:      req.ProjectID,
@@ -461,13 +468,15 @@ func (s *LLMProxyService) Create(orgUUID, createdBy string, req *dto.LLMProxy) (
 		Description:      req.Description,
 		CreatedBy:        createdBy,
 		Version:          req.Version,
-		Context:          defaultString(req.Context, "/"),
-		VHost:            req.VHost,
-		Provider:         req.Provider,
 		ProviderUUID:     prov.UUID,
 		OpenAPISpec:      req.OpenAPI,
-		Policies:         mapPolicies(req.Policies),
 		Status:           llmStatusPending,
+		Configuration: model.LLMProxyConfig{
+			Context:  &contextValue,
+			Vhost:    &req.VHost,
+			Provider: req.Provider,
+			Policies: mapPolicies(req.Policies),
+		},
 	}
 
 	if err := s.repo.Create(m); err != nil {
@@ -534,7 +543,7 @@ func (s *LLMProxyService) List(orgUUID string, projectUUID *string, limit, offse
 			CreatedBy:   p.CreatedBy,
 			Version:     p.Version,
 			ProjectID:   p.ProjectUUID,
-			Provider:    p.Provider,
+			Provider:    p.Configuration.Provider,
 			Status:      p.Status,
 			CreatedAt:   p.CreatedAt,
 			UpdatedAt:   p.UpdatedAt,
@@ -547,21 +556,22 @@ func (s *LLMProxyService) ListByProvider(orgUUID, providerID string, limit, offs
 	if providerID == "" {
 		return nil, constants.ErrInvalidInput
 	}
-	if s.providerRepo != nil {
-		prov, err := s.providerRepo.GetByID(providerID, orgUUID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to validate provider: %w", err)
-		}
-		if prov == nil {
-			return nil, constants.ErrLLMProviderNotFound
-		}
+	if s.providerRepo == nil {
+		return nil, fmt.Errorf("could not initialize llmprovider repository")
+	}
+	prov, err := s.providerRepo.GetByID(providerID, orgUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate provider: %w", err)
+	}
+	if prov == nil {
+		return nil, constants.ErrLLMProviderNotFound
 	}
 
-	items, err := s.repo.ListByProvider(orgUUID, providerID, limit, offset)
+	items, err := s.repo.ListByProvider(orgUUID, prov.UUID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list proxies by provider: %w", err)
 	}
-	totalCount, err := s.repo.CountByProvider(orgUUID, providerID)
+	totalCount, err := s.repo.CountByProvider(orgUUID, prov.UUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count proxies by provider: %w", err)
 	}
@@ -582,7 +592,7 @@ func (s *LLMProxyService) ListByProvider(orgUUID, providerID string, limit, offs
 			CreatedBy:   p.CreatedBy,
 			Version:     p.Version,
 			ProjectID:   p.ProjectUUID,
-			Provider:    p.Provider,
+			Provider:    p.Configuration.Provider,
 			Status:      p.Status,
 			CreatedAt:   p.CreatedAt,
 			UpdatedAt:   p.UpdatedAt,
@@ -625,19 +635,22 @@ func (s *LLMProxyService) Update(orgUUID, handle string, req *dto.LLMProxy) (*dt
 		return nil, constants.ErrLLMProviderNotFound
 	}
 
+	contextValue := defaultString(req.Context, "/")
 	m := &model.LLMProxy{
 		OrganizationUUID: orgUUID,
 		ID:               handle,
 		Name:             req.Name,
 		Description:      req.Description,
 		Version:          req.Version,
-		Context:          defaultString(req.Context, "/"),
-		VHost:            req.VHost,
-		Provider:         req.Provider,
 		ProviderUUID:     prov.UUID,
 		OpenAPISpec:      req.OpenAPI,
-		Policies:         mapPolicies(req.Policies),
 		Status:           llmStatusPending,
+		Configuration: model.LLMProxyConfig{
+			Context:  &contextValue,
+			Vhost:    &req.VHost,
+			Provider: req.Provider,
+			Policies: mapPolicies(req.Policies),
+		},
 	}
 	if err := s.repo.Update(m); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -924,37 +937,44 @@ func mapProviderModelToDTO(m *model.LLMProvider) *dto.LLMProvider {
 	if m == nil {
 		return nil
 	}
+	contextValue := ""
+	if m.Configuration.Context != nil {
+		contextValue = *m.Configuration.Context
+	}
+	vhostValue := ""
+	if m.Configuration.VHost != nil {
+		vhostValue = *m.Configuration.VHost
+	}
 	out := &dto.LLMProvider{
 		ID:             m.ID,
 		Name:           m.Name,
 		Description:    m.Description,
 		CreatedBy:      m.CreatedBy,
 		Version:        m.Version,
-		Context:        m.Context,
-		VHost:          m.VHost,
+		Context:        contextValue,
+		VHost:          vhostValue,
 		Template:       m.Template,
 		OpenAPI:        m.OpenAPISpec,
 		ModelProviders: mapModelProvidersDTO(m.ModelProviders),
-		RateLimiting:   mapRateLimitingDTO(m.RateLimiting),
-		Upstream:       mapUpstreamConfigToDTO(m.Upstream),
+		RateLimiting:   mapRateLimitingDTO(m.Configuration.RateLimiting),
+		Upstream:       mapUpstreamConfigToDTO(m.Configuration.Upstream),
 		AccessControl:  dto.LLMAccessControl{Mode: "deny_all"},
-		Policies:       nil,
 		CreatedAt:      m.CreatedAt,
 		UpdatedAt:      m.UpdatedAt,
 	}
-	if m.AccessControl != nil {
-		ac := dto.LLMAccessControl{Mode: m.AccessControl.Mode}
-		if len(m.AccessControl.Exceptions) > 0 {
-			ac.Exceptions = make([]dto.RouteException, 0, len(m.AccessControl.Exceptions))
-			for _, e := range m.AccessControl.Exceptions {
+	if m.Configuration.AccessControl != nil {
+		ac := dto.LLMAccessControl{Mode: m.Configuration.AccessControl.Mode}
+		if len(m.Configuration.AccessControl.Exceptions) > 0 {
+			ac.Exceptions = make([]dto.RouteException, 0, len(m.Configuration.AccessControl.Exceptions))
+			for _, e := range m.Configuration.AccessControl.Exceptions {
 				ac.Exceptions = append(ac.Exceptions, dto.RouteException{Path: e.Path, Methods: e.Methods})
 			}
 		}
 		out.AccessControl = ac
 	}
-	if len(m.Policies) > 0 {
-		out.Policies = make([]dto.LLMPolicy, 0, len(m.Policies))
-		for _, p := range m.Policies {
+	if len(m.Configuration.Policies) > 0 {
+		out.Policies = make([]dto.LLMPolicy, 0, len(m.Configuration.Policies))
+		for _, p := range m.Configuration.Policies {
 			paths := make([]dto.LLMPolicyPath, 0, len(p.Paths))
 			for _, pp := range p.Paths {
 				paths = append(paths, dto.LLMPolicyPath{Path: pp.Path, Methods: pp.Methods, Params: pp.Params})
@@ -1217,6 +1237,14 @@ func mapProxyModelToDTO(m *model.LLMProxy) *dto.LLMProxy {
 	if m == nil {
 		return nil
 	}
+	contextValue := ""
+	if m.Configuration.Context != nil {
+		contextValue = *m.Configuration.Context
+	}
+	vhostValue := ""
+	if m.Configuration.Vhost != nil {
+		vhostValue = *m.Configuration.Vhost
+	}
 	out := &dto.LLMProxy{
 		ID:          m.ID,
 		Name:        m.Name,
@@ -1224,16 +1252,16 @@ func mapProxyModelToDTO(m *model.LLMProxy) *dto.LLMProxy {
 		CreatedBy:   m.CreatedBy,
 		Version:     m.Version,
 		ProjectID:   m.ProjectUUID,
-		Context:     m.Context,
-		VHost:       m.VHost,
-		Provider:    m.Provider,
+		Context:     contextValue,
+		VHost:       vhostValue,
+		Provider:    m.Configuration.Provider,
 		OpenAPI:     m.OpenAPISpec,
 		CreatedAt:   m.CreatedAt,
 		UpdatedAt:   m.UpdatedAt,
 	}
-	if len(m.Policies) > 0 {
-		out.Policies = make([]dto.LLMPolicy, 0, len(m.Policies))
-		for _, p := range m.Policies {
+	if len(m.Configuration.Policies) > 0 {
+		out.Policies = make([]dto.LLMPolicy, 0, len(m.Configuration.Policies))
+		for _, p := range m.Configuration.Policies {
 			paths := make([]dto.LLMPolicyPath, 0, len(p.Paths))
 			for _, pp := range p.Paths {
 				paths = append(paths, dto.LLMPolicyPath{Path: pp.Path, Methods: pp.Methods, Params: pp.Params})
