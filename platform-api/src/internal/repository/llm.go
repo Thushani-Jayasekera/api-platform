@@ -657,11 +657,11 @@ func (r *LLMProxyRepo) Create(p *model.LLMProxy) error {
 	// Insert into llm_proxies table
 	_, err = tx.Exec(`
 		INSERT INTO llm_proxies (
-			uuid, project_uuid, description, created_by, context, vhost, provider,
+			uuid, project_uuid, description, created_by, context, vhost, provider, provider_uuid,
 			openapi_spec, policies, status
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.UUID, p.ProjectUUID, p.Description, p.CreatedBy, p.Context, p.VHost, p.Provider,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.UUID, p.ProjectUUID, p.Description, p.CreatedBy, p.Context, p.VHost, p.Provider, p.ProviderUUID,
 		p.OpenAPISpec, policiesColumn, p.Status,
 	)
 	if err != nil {
@@ -678,7 +678,7 @@ func (r *LLMProxyRepo) GetByID(proxyID, orgUUID string) (*model.LLMProxy, error)
 	row := r.db.QueryRow(`
 		SELECT
 			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
-			p.project_uuid, p.description, p.created_by, p.context, p.vhost, p.provider,
+			p.project_uuid, p.description, p.created_by, p.context, p.vhost, p.provider, p.provider_uuid,
 			p.openapi_spec, p.policies, p.status
 		FROM artifacts a
 		JOIN llm_proxies p ON a.uuid = p.uuid
@@ -689,7 +689,7 @@ func (r *LLMProxyRepo) GetByID(proxyID, orgUUID string) (*model.LLMProxy, error)
 	var openAPISpec, policiesJSON sql.NullString
 	if err := row.Scan(
 		&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
-		&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Context, &p.VHost, &p.Provider,
+		&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Context, &p.VHost, &p.Provider, &p.ProviderUUID,
 		&openAPISpec, &policiesJSON, &p.Status,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -714,7 +714,7 @@ func (r *LLMProxyRepo) List(orgUUID string, limit, offset int) ([]*model.LLMProx
 	rows, err := r.db.Query(`
 		SELECT
 			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
-			p.project_uuid, p.description, p.created_by, p.context, p.vhost, p.provider,
+			p.project_uuid, p.description, p.created_by, p.context, p.vhost, p.provider, p.provider_uuid,
 			p.openapi_spec, p.policies, p.status
 		FROM artifacts a
 		JOIN llm_proxies p ON a.uuid = p.uuid
@@ -733,7 +733,7 @@ func (r *LLMProxyRepo) List(orgUUID string, limit, offset int) ([]*model.LLMProx
 		var openAPISpec, policiesJSON sql.NullString
 		err := rows.Scan(
 			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
-			&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Context, &p.VHost, &p.Provider,
+			&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Context, &p.VHost, &p.Provider, &p.ProviderUUID,
 			&openAPISpec, &policiesJSON, &p.Status,
 		)
 		if err != nil {
@@ -756,7 +756,7 @@ func (r *LLMProxyRepo) ListByProject(orgUUID, projectUUID string, limit, offset 
 	rows, err := r.db.Query(`
 		SELECT
 			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
-			p.project_uuid, p.description, p.created_by, p.context, p.vhost, p.provider,
+			p.project_uuid, p.description, p.created_by, p.context, p.vhost, p.provider, p.provider_uuid,
 			p.openapi_spec, p.policies, p.status
 		FROM artifacts a
 		JOIN llm_proxies p ON a.uuid = p.uuid
@@ -775,7 +775,7 @@ func (r *LLMProxyRepo) ListByProject(orgUUID, projectUUID string, limit, offset 
 		var openAPISpec, policiesJSON sql.NullString
 		err := rows.Scan(
 			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
-			&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Context, &p.VHost, &p.Provider,
+			&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Context, &p.VHost, &p.Provider, &p.ProviderUUID,
 			&openAPISpec, &policiesJSON, &p.Status,
 		)
 		if err != nil {
@@ -798,7 +798,7 @@ func (r *LLMProxyRepo) ListByProvider(orgUUID, providerID string, limit, offset 
 	rows, err := r.db.Query(`
 		SELECT
 			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
-			p.project_uuid, p.description, p.created_by, p.context, p.vhost, p.provider,
+			p.project_uuid, p.description, p.created_by, p.context, p.vhost, p.provider, p.provider_uuid,
 			p.openapi_spec, p.policies, p.status
 		FROM artifacts a
 		JOIN llm_proxies p ON a.uuid = p.uuid
@@ -817,7 +817,7 @@ func (r *LLMProxyRepo) ListByProvider(orgUUID, providerID string, limit, offset 
 		var openAPISpec, policiesJSON sql.NullString
 		err := rows.Scan(
 			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
-			&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Context, &p.VHost, &p.Provider,
+			&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Context, &p.VHost, &p.Provider, &p.ProviderUUID,
 			&openAPISpec, &policiesJSON, &p.Status,
 		)
 		if err != nil {
@@ -914,10 +914,10 @@ func (r *LLMProxyRepo) Update(p *model.LLMProxy) error {
 	// Update llm_proxies table
 	result, err := tx.Exec(`
 		UPDATE llm_proxies
-		SET description = ?, context = ?, vhost = ?, provider = ?,
+		SET description = ?, context = ?, vhost = ?, provider = ?, provider_uuid = ?,
 			openapi_spec = ?, policies = ?, status = ?
 		WHERE uuid = ?`,
-		p.Description, p.Context, p.VHost, p.Provider,
+		p.Description, p.Context, p.VHost, p.Provider, p.ProviderUUID,
 		p.OpenAPISpec, policiesColumn, p.Status,
 		proxyUUID,
 	)

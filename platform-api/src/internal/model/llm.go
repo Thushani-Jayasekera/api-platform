@@ -162,6 +162,7 @@ type LLMProxy struct {
 	Context          string      `json:"context,omitempty" db:"context"`
 	VHost            string      `json:"vhost,omitempty" db:"vhost"`
 	Provider         string      `json:"provider" db:"provider"`
+	ProviderUUID     string      `json:"providerUuid" db:"provider_uuid"`
 	OpenAPISpec      string      `json:"openapi,omitempty" db:"openapi_spec"`
 	Policies         []LLMPolicy `json:"policies,omitempty" db:"-"`
 	Status           string      `json:"status" db:"status"`
