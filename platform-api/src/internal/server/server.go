@@ -159,6 +159,7 @@ func StartPlatformAPIServer(cfg *config.Server) (*Server, error) {
 	apiKeyService := service.NewAPIKeyService(apiRepo, gatewayEventsService)
 	gitService := service.NewGitService()
 	deploymentService := service.NewDeploymentService(apiRepo, artifactRepo, deploymentRepo, gatewayRepo, orgRepo, gatewayEventsService, apiUtil, cfg)
+	llmProviderDeploymentService := service.NewLLMProviderDeploymentService(llmProviderRepo, llmTemplateRepo, deploymentRepo, gatewayRepo, orgRepo, gatewayEventsService, cfg)
 	llmTemplateService := service.NewLLMProviderTemplateService(llmTemplateRepo)
 	llmProviderService := service.NewLLMProviderService(llmProviderRepo, llmTemplateRepo, orgRepo, llmTemplateSeeder)
 	llmProxyService := service.NewLLMProxyService(llmProxyRepo, llmProviderRepo, projectRepo)
@@ -175,6 +176,7 @@ func StartPlatformAPIServer(cfg *config.Server) (*Server, error) {
 	gitHandler := handler.NewGitHandler(gitService)
 	deploymentHandler := handler.NewDeploymentHandler(deploymentService)
 	llmHandler := handler.NewLLMHandler(llmTemplateService, llmProviderService, llmProxyService)
+	llmDeploymentHandler := handler.NewLLMProviderDeploymentHandler(llmProviderDeploymentService)
 
 	// Setup router
 	router := gin.Default()
@@ -208,6 +210,7 @@ func StartPlatformAPIServer(cfg *config.Server) (*Server, error) {
 	gitHandler.RegisterRoutes(router)
 	deploymentHandler.RegisterRoutes(router)
 	llmHandler.RegisterRoutes(router)
+	llmDeploymentHandler.RegisterRoutes(router)
 
 	log.Printf("[INFO] WebSocket manager initialized: maxConnections=%d heartbeatTimeout=%ds rateLimitPerMin=%d",
 		cfg.WebSocket.MaxConnections, cfg.WebSocket.ConnectionTimeout, cfg.WebSocket.RateLimitPerMin)
