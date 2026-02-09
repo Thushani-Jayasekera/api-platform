@@ -141,6 +141,7 @@ func (s *APIService) CreateAPI(req *CreateAPIRequest, orgUUID string) (*dto.API,
 		Transport:       req.Transport,
 		Operations:      req.Operations,
 		Channels:        req.Channels,
+		Upstream:        req.Upstream,
 	}
 
 	apiModel := s.apiUtil.DTOToModel(api)
@@ -663,6 +664,9 @@ func (s *APIService) applyAPIUpdates(existingAPIModel *model.API, req *UpdateAPI
 	if req.Policies != nil {
 		existingAPI.Policies = *req.Policies
 	}
+	if req.Upstream != nil {
+		existingAPI.Upstream = req.Upstream
+	}
 
 	return existingAPI, nil
 }
@@ -733,31 +737,33 @@ func (s *APIService) isValidVHost(vhost string) bool {
 
 // CreateAPIRequest represents the request to create a new API
 type CreateAPIRequest struct {
-	ID              string               `json:"id,omitempty"`
-	Name            string               `json:"name"`
-	Description     string               `json:"description,omitempty"`
-	Context         string               `json:"context"`
-	Version         string               `json:"version"`
-	CreatedBy       string               `json:"createdBy,omitempty"`
-	ProjectID       string               `json:"projectId"`
-	LifeCycleStatus string               `json:"lifeCycleStatus,omitempty"`
-	Kind            string               `json:"kind,omitempty"`
-	Transport  []string        `json:"transport,omitempty"`
-	Channels   []dto.Channel   `json:"channels,omitempty"`
-	Operations []dto.Operation `json:"operations,omitempty"`
+	ID              string             `json:"id,omitempty"`
+	Name            string             `json:"name"`
+	Description     string             `json:"description,omitempty"`
+	Context         string             `json:"context"`
+	Version         string             `json:"version"`
+	CreatedBy       string             `json:"createdBy,omitempty"`
+	ProjectID       string             `json:"projectId"`
+	LifeCycleStatus string             `json:"lifeCycleStatus,omitempty"`
+	Kind            string             `json:"kind,omitempty"`
+	Transport       []string           `json:"transport,omitempty"`
+	Channels        []dto.Channel      `json:"channels,omitempty"`
+	Operations      []dto.Operation    `json:"operations,omitempty"`
+	Upstream        *dto.UpstreamConfig `json:"upstream,omitempty"`
 }
 
 // UpdateAPIRequest represents the request to update an API
 type UpdateAPIRequest struct {
-	Name            *string          `json:"name,omitempty"`
-	Description     *string          `json:"description,omitempty"`
-	CreatedBy       *string          `json:"createdBy,omitempty"`
-	LifeCycleStatus *string          `json:"lifeCycleStatus,omitempty"`
-	Kind            *string          `json:"kind,omitempty"`
-	Transport       *[]string        `json:"transport,omitempty"`
-	Operations      *[]dto.Operation `json:"operations,omitempty"`
-	Channels        *[]dto.Channel   `json:"channels,omitempty"`
-	Policies        *[]dto.Policy    `json:"policies,omitempty"`
+	Name            *string             `json:"name,omitempty"`
+	Description     *string             `json:"description,omitempty"`
+	CreatedBy       *string             `json:"createdBy,omitempty"`
+	LifeCycleStatus *string             `json:"lifeCycleStatus,omitempty"`
+	Kind            *string             `json:"kind,omitempty"`
+	Transport       *[]string           `json:"transport,omitempty"`
+	Operations      *[]dto.Operation    `json:"operations,omitempty"`
+	Channels        *[]dto.Channel      `json:"channels,omitempty"`
+	Policies        *[]dto.Policy       `json:"policies,omitempty"`
+	Upstream        *dto.UpstreamConfig `json:"upstream,omitempty"`
 }
 
 // generateDefaultOperations creates default CRUD operations for an API
@@ -878,6 +884,7 @@ func (s *APIService) ImportAPIProject(req *dto.ImportAPIProjectRequest, orgUUID 
 	createReq := &CreateAPIRequest{
 		ID:              apiData.ID,
 		Name:            apiData.Name,
+		Kind:            apiData.Kind,
 		Description:     apiData.Description,
 		Context:         apiData.Context,
 		Version:         apiData.Version,

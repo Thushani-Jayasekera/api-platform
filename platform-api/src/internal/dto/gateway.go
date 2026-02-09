@@ -41,11 +41,11 @@ type GatewayResponse struct {
 	Description       string                 `json:"description,omitempty"`
 	Properties        map[string]interface{} `json:"properties,omitempty"`
 	Vhost             string                 `json:"vhost"`
-	IsCritical        bool      `json:"isCritical"`
-	FunctionalityType string    `json:"functionalityType"`
-	IsActive          bool      `json:"isActive"`
-	CreatedAt         time.Time `json:"createdAt"`
-	UpdatedAt         time.Time `json:"updatedAt"`
+	IsCritical        bool                   `json:"isCritical"`
+	FunctionalityType string                 `json:"functionalityType"`
+	IsActive          bool                   `json:"isActive"`
+	CreatedAt         time.Time              `json:"createdAt"`
+	UpdatedAt         time.Time              `json:"updatedAt"`
 }
 
 // GatewayListResponse represents a paginated list of gateways (constitution-compliant)
@@ -108,9 +108,9 @@ type DeploymentDetails struct {
 // APIGatewayResponse represents a gateway with API association and deployment details
 // This extends GatewayResponse with additional association and deployment fields
 type APIGatewayResponse struct {
-	GatewayResponse                       // Embedded gateway details
-	AssociatedAt    time.Time             `json:"associatedAt"`
-	IsDeployed      bool                  `json:"isDeployed"`
+	GatewayResponse                    // Embedded gateway details
+	AssociatedAt    time.Time          `json:"associatedAt"`
+	IsDeployed      bool               `json:"isDeployed"`
 	Deployment      *DeploymentDetails `json:"deployment,omitempty"` // Only present when isDeployed is true
 }
 
@@ -125,7 +125,7 @@ type APIGatewayListResponse struct {
 type GatewayArtifact struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name,omitempty"`
-	Kind      string    `json:"kind"` // "API", "MCP", "API_PRODUCT"
+	Kind      string    `json:"kind"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }

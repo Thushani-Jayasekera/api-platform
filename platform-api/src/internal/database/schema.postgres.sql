@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS apis (
     project_uuid VARCHAR(40) NOT NULL,
     lifecycle_status VARCHAR(20) DEFAULT 'CREATED',
     transport VARCHAR(255), -- JSON array as TEXT
-    configuration JSONB,
+    configuration JSONB NOT NULL,
     FOREIGN KEY (uuid) REFERENCES artifacts(uuid) ON DELETE CASCADE,
     FOREIGN KEY (project_uuid) REFERENCES projects(uuid) ON DELETE CASCADE
 );

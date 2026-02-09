@@ -59,7 +59,11 @@ func (r *APIRepo) CreateAPI(api *model.API) error {
 	api.UpdatedAt = time.Now()
 
 	// Convert transport slice to JSON
-	transportJSON, _ := json.Marshal(api.Transport)
+	transportJSON, err := json.Marshal(api.Transport)
+	if err != nil {
+		return fmt.Errorf("failed to marshal transport: %w", err)
+	}
+
 	configurationJSON, err := serializeAPIConfigurations(api.Configuration)
 	if err != nil {
 		return err
@@ -347,7 +351,11 @@ func (r *APIRepo) UpdateAPI(api *model.API) error {
 	api.UpdatedAt = time.Now()
 
 	// Convert transport slice to JSON
-	transportJSON, _ := json.Marshal(api.Transport)
+	transportJSON, err := json.Marshal(api.Transport)
+	if err != nil {
+		return fmt.Errorf("failed to marshal transport: %w", err)
+	}
+
 	configurationJSON, err := serializeAPIConfigurations(api.Configuration)
 	if err != nil {
 		return err

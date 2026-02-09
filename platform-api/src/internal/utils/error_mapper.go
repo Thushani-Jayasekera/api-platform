@@ -219,6 +219,8 @@ func GetErrorResponse(err error) (int, interface{}) {
 		return makeError(http.StatusBadRequest, "Invalid transport protocol")
 	case errors.Is(err, constants.ErrInvalidDeployment):
 		return makeError(http.StatusBadRequest, "Invalid API deployment")
+	case errors.Is(err, constants.ErrUpstreamRequired):
+		return makeError(http.StatusBadRequest, "Upstream configuration is required")
 
 	// Artifact errors
 	case errors.Is(err, constants.ErrArtifactNotFound):

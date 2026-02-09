@@ -185,7 +185,7 @@ func (s *GatewayInternalAPIService) CreateGatewayDeployment(apiHandle, orgID, ga
 			OrganizationID:  orgID,
 			CreatedBy:       "admin", // Default provider
 			LifeCycleStatus: "CREATED",
-			Kind:            constants.RestApi,
+			Kind:            notification.Configuration.Kind,
 			Transport:       []string{"http", "https"},
 			Configuration: model.RestAPIConfig{
 				Context:    &notification.Configuration.Spec.Context,
