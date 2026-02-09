@@ -116,10 +116,10 @@ func TestClient_handleMessage_APIDeployedEvent(t *testing.T) {
 	event := map[string]interface{}{
 		"type": "api.deployed",
 		"payload": map[string]interface{}{
-			"apiId":       "test-api-123",
-			"environment": "production",
-			"revisionId":  "rev-1",
-			"vhost":       "api.example.com",
+			"apiId":        "test-api-123",
+			"environment":  "production",
+			"deploymentId": "rev-1",
+			"vhost":        "api.example.com",
 		},
 		"timestamp":     time.Now().Format(time.RFC3339),
 		"correlationId": "corr-12345",

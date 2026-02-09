@@ -146,7 +146,9 @@ func (s *APIDeploymentService) DeployAPIConfiguration(params APIDeploymentParams
 
 	handle := apiConfig.Metadata.Name
 
-	if s.store != nil {
+	// Only check for conflicts when creating a new API (apiID was not provided)
+	// When apiID is provided (from deployment event), we're updating an existing API
+	if params.APIID == "" && s.store != nil {
 		if _, err := s.store.GetByNameVersion(apiName, apiVersion); err == nil {
 			return nil, fmt.Errorf("%w: configuration with name '%s' and version '%s' already exists", storage.ErrConflict, apiName, apiVersion)
 		}

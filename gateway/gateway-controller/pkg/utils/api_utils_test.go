@@ -245,7 +245,7 @@ func TestAPIUtilsService_NotifyAPIDeployment(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "POST", r.Method)
 			assert.Equal(t, "/apis/test-api/gateway-deployments", r.URL.Path)
-			assert.Contains(t, r.URL.RawQuery, "revisionId=rev-123")
+			assert.Contains(t, r.URL.RawQuery, "deploymentId=rev-123")
 			assert.Equal(t, "test-token", r.Header.Get("api-key"))
 			assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 			w.WriteHeader(http.StatusOK)
