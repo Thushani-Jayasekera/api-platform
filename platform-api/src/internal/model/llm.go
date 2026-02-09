@@ -135,7 +135,7 @@ type LLMProvider struct {
 	Description      string             `json:"description,omitempty" db:"description"`
 	CreatedBy        string             `json:"createdBy,omitempty" db:"created_by"`
 	Version          string             `json:"version" db:"version"`
-	Template         string             `json:"template" db:"template"`
+	TemplateUUID     string             `json:"templateUuid" db:"template_uuid"`
 	OpenAPISpec      string             `json:"openapi,omitempty" db:"openapi_spec"`
 	ModelProviders   []LLMModelProvider `json:"modelProviders,omitempty" db:"-"`
 	Status           string             `json:"status" db:"status"`

@@ -266,7 +266,7 @@ func (s *LLMProviderService) Create(orgUUID, createdBy string, req *dto.LLMProvi
 		Description:      req.Description,
 		CreatedBy:        createdBy,
 		Version:          req.Version,
-		Template:         req.Template,
+		TemplateUUID:     tpl.UUID,
 		OpenAPISpec:      req.OpenAPI,
 		ModelProviders:   mapModelProviders(req.ModelProviders),
 		Status:           llmStatusPending,
@@ -294,7 +294,7 @@ func (s *LLMProviderService) Create(orgUUID, createdBy string, req *dto.LLMProvi
 	if created == nil {
 		return nil, constants.ErrLLMProviderNotFound
 	}
-	return mapProviderModelToDTO(created), nil
+	return mapProviderModelToDTO(created, tpl.ID), nil
 }
 
 func (s *LLMProviderService) List(orgUUID string, limit, offset int) (*dto.LLMProviderListResponse, error) {
@@ -316,13 +316,21 @@ func (s *LLMProviderService) List(orgUUID string, limit, offset int) (*dto.LLMPr
 	}
 	resp.List = make([]dto.LLMProviderListItem, 0, len(items))
 	for _, p := range items {
+		// Look up template handle from UUID
+		tplHandle := ""
+		if p.TemplateUUID != "" {
+			tpl, err := s.templateRepo.GetByUUID(p.TemplateUUID, orgUUID)
+			if err == nil && tpl != nil {
+				tplHandle = tpl.ID
+			}
+		}
 		resp.List = append(resp.List, dto.LLMProviderListItem{
 			ID:          p.ID,
 			Name:        p.Name,
 			Description: p.Description,
 			CreatedBy:   p.CreatedBy,
 			Version:     p.Version,
-			Template:    p.Template,
+			Template:    tplHandle,
 			Status:      p.Status,
 			CreatedAt:   p.CreatedAt,
 			UpdatedAt:   p.UpdatedAt,
@@ -342,7 +350,15 @@ func (s *LLMProviderService) Get(orgUUID, handle string) (*dto.LLMProvider, erro
 	if m == nil {
 		return nil, constants.ErrLLMProviderNotFound
 	}
-	return mapProviderModelToDTO(m), nil
+	// Look up template handle from UUID
+	tplHandle := ""
+	if m.TemplateUUID != "" {
+		tpl, err := s.templateRepo.GetByUUID(m.TemplateUUID, orgUUID)
+		if err == nil && tpl != nil {
+			tplHandle = tpl.ID
+		}
+	}
+	return mapProviderModelToDTO(m, tplHandle), nil
 }
 
 func (s *LLMProviderService) Update(orgUUID, handle string, req *dto.LLMProvider) (*dto.LLMProvider, error) {
@@ -381,7 +397,7 @@ func (s *LLMProviderService) Update(orgUUID, handle string, req *dto.LLMProvider
 		Name:             req.Name,
 		Description:      req.Description,
 		Version:          req.Version,
-		Template:         req.Template,
+		TemplateUUID:     tpl.UUID,
 		OpenAPISpec:      req.OpenAPI,
 		ModelProviders:   mapModelProviders(req.ModelProviders),
 		Status:           llmStatusPending,
@@ -409,7 +425,7 @@ func (s *LLMProviderService) Update(orgUUID, handle string, req *dto.LLMProvider
 	if updated == nil {
 		return nil, constants.ErrLLMProviderNotFound
 	}
-	return mapProviderModelToDTO(updated), nil
+	return mapProviderModelToDTO(updated, tpl.ID), nil
 }
 
 func (s *LLMProviderService) Delete(orgUUID, handle string) error {
@@ -933,7 +949,7 @@ func mapExtractionIdentifierDTO(m *model.ExtractionIdentifier) *dto.ExtractionId
 	return &dto.ExtractionIdentifier{Location: m.Location, Identifier: m.Identifier}
 }
 
-func mapProviderModelToDTO(m *model.LLMProvider) *dto.LLMProvider {
+func mapProviderModelToDTO(m *model.LLMProvider, templateHandle string) *dto.LLMProvider {
 	if m == nil {
 		return nil
 	}
@@ -953,7 +969,7 @@ func mapProviderModelToDTO(m *model.LLMProvider) *dto.LLMProvider {
 		Version:        m.Version,
 		Context:        contextValue,
 		VHost:          vhostValue,
-		Template:       m.Template,
+		Template:       templateHandle,
 		OpenAPI:        m.OpenAPISpec,
 		ModelProviders: mapModelProvidersDTO(m.ModelProviders),
 		RateLimiting:   mapRateLimitingDTO(m.Configuration.RateLimiting),

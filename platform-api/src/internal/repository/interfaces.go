@@ -152,6 +152,7 @@ type APIPublicationRepository interface {
 type LLMProviderTemplateRepository interface {
 	Create(t *model.LLMProviderTemplate) error
 	GetByID(templateID, orgUUID string) (*model.LLMProviderTemplate, error)
+	GetByUUID(uuid, orgUUID string) (*model.LLMProviderTemplate, error)
 	List(orgUUID string, limit, offset int) ([]*model.LLMProviderTemplate, error)
 	Count(orgUUID string) (int, error)
 	Update(t *model.LLMProviderTemplate) error

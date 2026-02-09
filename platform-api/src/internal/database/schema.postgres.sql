@@ -216,13 +216,13 @@ CREATE TABLE IF NOT EXISTS llm_providers (
     uuid VARCHAR(40) PRIMARY KEY,
     description VARCHAR(1023),
     created_by VARCHAR(255),
-    template VARCHAR(255) NOT NULL,
+    template_uuid VARCHAR(40) NOT NULL,
     openapi_spec TEXT,
     model_list TEXT,
     status VARCHAR(20) NOT NULL DEFAULT 'CREATED',
     configuration JSONB NOT NULL,
     FOREIGN KEY (uuid) REFERENCES artifacts(uuid) ON DELETE CASCADE,
-    FOREIGN KEY (template) REFERENCES llm_provider_templates(handle) ON UPDATE CASCADE ON DELETE RESTRICT
+    FOREIGN KEY (template_uuid) REFERENCES llm_provider_templates(uuid) ON DELETE RESTRICT
 );
 
 -- LLM Proxies table
@@ -261,6 +261,6 @@ CREATE INDEX IF NOT EXISTS idx_association_mappings_resource ON association_mapp
 CREATE INDEX IF NOT EXISTS idx_association_mappings_org ON association_mappings(organization_uuid);
 CREATE INDEX IF NOT EXISTS idx_artifacts_org ON artifacts(organization_uuid);
 CREATE INDEX IF NOT EXISTS idx_llm_provider_templates_org ON llm_provider_templates(organization_uuid);
-CREATE INDEX IF NOT EXISTS idx_llm_providers_template ON llm_providers(template);
+CREATE INDEX IF NOT EXISTS idx_llm_providers_template ON llm_providers(template_uuid);
 CREATE INDEX IF NOT EXISTS idx_llm_proxies_project ON llm_proxies(project_uuid);
 CREATE INDEX IF NOT EXISTS idx_llm_proxies_provider_uuid ON llm_proxies(provider_uuid);

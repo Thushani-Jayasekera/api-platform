@@ -123,6 +123,42 @@ func (r *LLMProviderTemplateRepo) GetByID(templateID, orgUUID string) (*model.LL
 	return &t, nil
 }
 
+func (r *LLMProviderTemplateRepo) GetByUUID(uuid, orgUUID string) (*model.LLMProviderTemplate, error) {
+	row := r.db.QueryRow(r.db.Rebind(`
+		SELECT uuid, organization_uuid, handle, name, description, created_by, configuration, created_at, updated_at
+		FROM llm_provider_templates
+		WHERE uuid = ? AND organization_uuid = ?
+	`), uuid, orgUUID)
+
+	var t model.LLMProviderTemplate
+	var configJSON sql.NullString
+	if err := row.Scan(
+		&t.UUID, &t.OrganizationUUID, &t.ID, &t.Name, &t.Description, &t.CreatedBy, &configJSON,
+		&t.CreatedAt, &t.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if configJSON.Valid && configJSON.String != "" {
+		var cfg llmProviderTemplateConfig
+		if err := json.Unmarshal([]byte(configJSON.String), &cfg); err != nil {
+			return nil, err
+		}
+		t.Metadata = cfg.Metadata
+		t.PromptTokens = cfg.PromptTokens
+		t.CompletionTokens = cfg.CompletionTokens
+		t.TotalTokens = cfg.TotalTokens
+		t.RemainingTokens = cfg.RemainingTokens
+		t.RequestModel = cfg.RequestModel
+		t.ResponseModel = cfg.ResponseModel
+	}
+
+	return &t, nil
+}
+
 func (r *LLMProviderTemplateRepo) List(orgUUID string, limit, offset int) ([]*model.LLMProviderTemplate, error) {
 	rows, err := r.db.Query(r.db.Rebind(`
 		SELECT uuid, organization_uuid, handle, name, description, created_by, configuration, created_at, updated_at
@@ -290,10 +326,10 @@ func (r *LLMProviderRepo) Create(p *model.LLMProvider) error {
 	// Insert into llm_providers table
 	_, err = tx.Exec(`
 		INSERT INTO llm_providers (
-			uuid, description, created_by, template, openapi_spec, model_list, status, configuration
+			uuid, description, created_by, template_uuid, openapi_spec, model_list, status, configuration
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.UUID, p.Description, p.CreatedBy, p.Template,
+		p.UUID, p.Description, p.CreatedBy, p.TemplateUUID,
 		p.OpenAPISpec, string(modelProvidersJSON), p.Status, configurationJSON,
 	)
 	if err != nil {
@@ -310,7 +346,7 @@ func (r *LLMProviderRepo) GetByID(providerID, orgUUID string) (*model.LLMProvide
 	query := `
 		SELECT
 			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
-			p.description, p.created_by, p.template, p.openapi_spec, p.model_list, p.status, p.configuration
+			p.description, p.created_by, p.template_uuid, p.openapi_spec, p.model_list, p.status, p.configuration
 		FROM artifacts a
 		JOIN llm_providers p ON a.uuid = p.uuid
 		WHERE a.handle = ? AND a.organization_uuid = ? AND a.kind = ?`
@@ -321,7 +357,7 @@ func (r *LLMProviderRepo) GetByID(providerID, orgUUID string) (*model.LLMProvide
 	var configurationJSON sql.NullString
 	if err := row.Scan(
 		&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
-		&p.Description, &p.CreatedBy, &p.Template, &openAPISpec, &modelProvidersRaw, &p.Status, &configurationJSON,
+		&p.Description, &p.CreatedBy, &p.TemplateUUID, &openAPISpec, &modelProvidersRaw, &p.Status, &configurationJSON,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -353,7 +389,7 @@ func (r *LLMProviderRepo) List(orgUUID string, limit, offset int) ([]*model.LLMP
 	query := `
 		SELECT
 			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
-			p.description, p.created_by, p.template, p.openapi_spec, p.model_list, p.status, p.configuration
+			p.description, p.created_by, p.template_uuid, p.openapi_spec, p.model_list, p.status, p.configuration
 		FROM artifacts a
 		JOIN llm_providers p ON a.uuid = p.uuid
 		WHERE a.organization_uuid = ? AND a.kind = ?
@@ -372,7 +408,7 @@ func (r *LLMProviderRepo) List(orgUUID string, limit, offset int) ([]*model.LLMP
 		var configurationJSON sql.NullString
 		err := rows.Scan(
 			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
-			&p.Description, &p.CreatedBy, &p.Template, &openAPISpec, &modelProvidersRaw, &p.Status, &configurationJSON,
+			&p.Description, &p.CreatedBy, &p.TemplateUUID, &openAPISpec, &modelProvidersRaw, &p.Status, &configurationJSON,
 		)
 		if err != nil {
 			return nil, err
@@ -451,9 +487,9 @@ func (r *LLMProviderRepo) Update(p *model.LLMProvider) error {
 	// Update llm_providers table
 	result, err := tx.Exec(`
 		UPDATE llm_providers
-		SET description = ?, template = ?, openapi_spec = ?, model_list = ?, status = ?, configuration = ?
+		SET description = ?, template_uuid = ?, openapi_spec = ?, model_list = ?, status = ?, configuration = ?
 		WHERE uuid = ?`,
-		p.Description, p.Template, p.OpenAPISpec, string(modelProvidersJSON), p.Status, configurationJSON,
+		p.Description, p.TemplateUUID, p.OpenAPISpec, string(modelProvidersJSON), p.Status, configurationJSON,
 		providerUUID,
 	)
 	if err != nil {
