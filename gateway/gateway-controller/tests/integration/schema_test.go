@@ -237,7 +237,7 @@ func TestSchemaInitialization(t *testing.T) {
 		err := rawDB.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='deployments'").Scan(&sql)
 		require.NoError(t, err)
 
-		assert.Contains(t, sql, "CHECK(status IN ('pending', 'deployed', 'failed'))", "Should have CHECK constraint on status")
+		assert.Contains(t, sql, "CHECK(status IN ('pending', 'deployed', 'failed', 'undeployed'))", "Should have CHECK constraint on status")
 	})
 
 	// Verify WAL mode is enabled

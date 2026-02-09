@@ -394,7 +394,7 @@ func (m *MockControlPlaneClient) IsConnected() bool {
 	return m.connected
 }
 
-func (m *MockControlPlaneClient) NotifyAPIDeployment(apiID string, cfg *models.StoredConfig, revisionID string) error {
+func (m *MockControlPlaneClient) NotifyAPIDeployment(apiID string, cfg *models.StoredConfig, deploymentID string) error {
 	return nil
 }
 
@@ -442,7 +442,7 @@ func createTestAPIServer() *APIServer {
 			},
 		},
 	}
-	
+
 	// Initialize API key service (needed for API key operations)
 	apiKeyService := utils.NewAPIKeyService(store, mockDB, nil, &server.systemConfig.GatewayController.APIKey)
 	server.apiKeyService = apiKeyService
@@ -1372,11 +1372,11 @@ func TestWaitForDeploymentAndNotifyTimeout(t *testing.T) {
 func TestNewAPIServer(t *testing.T) {
 	store := storage.NewConfigStore()
 	mockDB := NewMockStorage()
-	
+
 	policyDefs := map[string]api.PolicyDefinition{
 		"test|v1": {Name: "test", Version: "v1"},
 	}
-	
+
 	// LLMProviderTemplate structure matches API spec
 	templateDefs := make(map[string]*api.LLMProviderTemplate)
 	templateName := "test-template"
@@ -1385,14 +1385,14 @@ func TestNewAPIServer(t *testing.T) {
 			Name: templateName,
 		},
 	}
-	
+
 	validator := config.NewAPIValidator()
-	
+
 	vhosts := &config.VHostsConfig{
 		Main:    config.VHostEntry{Default: "localhost"},
 		Sandbox: config.VHostEntry{Default: "sandbox-localhost"},
 	}
-	
+
 	systemConfig := &config.Config{
 		GatewayController: config.GatewayController{
 			Router: config.RouterConfig{
@@ -1404,7 +1404,7 @@ func TestNewAPIServer(t *testing.T) {
 			},
 		},
 	}
-	
+
 	// This test is simplified - full test would require proper xDS mocks
 	// Instead, we just verify the structure
 	t.Run("verify test server creation", func(t *testing.T) {
@@ -1416,7 +1416,7 @@ func TestNewAPIServer(t *testing.T) {
 		assert.NotNil(t, server.parser)
 		assert.NotNil(t, server.validator)
 	})
-	
+
 	// Verify configuration objects are created correctly
 	t.Run("verify config structures", func(t *testing.T) {
 		assert.NotNil(t, store)
@@ -2367,7 +2367,7 @@ func TestUpdateAPIKeyInvalidBody(t *testing.T) {
 	server.UpdateAPIKey(c, "test-handle", "test-key")
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	
+
 	var response api.ErrorResponse
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -2390,7 +2390,7 @@ func TestUpdateAPIKeyMissingAPIKey(t *testing.T) {
 	server.UpdateAPIKey(c, "test-handle", "test-key")
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	
+
 	var response api.ErrorResponse
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -2410,7 +2410,7 @@ func TestRevokeAPIKeyNotFound(t *testing.T) {
 	server.RevokeAPIKey(c, "test-handle", "nonexistent")
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
-	
+
 	var response api.ErrorResponse
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)

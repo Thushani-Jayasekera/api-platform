@@ -209,11 +209,11 @@ type APIDeploymentNotification struct {
 }
 
 // NotifyAPIDeployment sends a REST API call to platform-api when an API is deployed successfully
-func (s *APIUtilsService) NotifyAPIDeployment(apiID string, apiConfig *models.StoredConfig, revisionID string) error {
+func (s *APIUtilsService) NotifyAPIDeployment(apiID string, apiConfig *models.StoredConfig, deploymentID string) error {
 	// Construct the deployment URL
 	deployURL := s.config.BaseURL + "/apis/" + apiID + "/gateway-deployments"
-	if revisionID != "" {
-		deployURL += "?revisionId=" + revisionID
+	if deploymentID != "" {
+		deployURL += "?deploymentId=" + deploymentID
 	}
 
 	// Create request body
@@ -257,7 +257,7 @@ func (s *APIUtilsService) NotifyAPIDeployment(apiID string, apiConfig *models.St
 	s.logger.Info("Sending API deployment notification to platform-api",
 		slog.String("api_id", apiID),
 		slog.String("url", deployURL),
-		slog.String("revision_id", revisionID))
+		slog.String("deployment_id", deploymentID))
 
 	// Make the request
 	resp, err := client.Do(req)

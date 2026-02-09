@@ -2115,10 +2115,10 @@ func (s *APIServer) waitForDeploymentAndNotify(configID string, correlationID st
 				// Extract API ID from stored config (use config ID as API ID)
 				apiID := configID
 
-				// Use empty revision ID for now (can be made configurable later)
-				revisionID := ""
+				// Use empty deployment ID for now (can be made configurable later)
+				deploymentID := ""
 
-				if err := s.controlPlaneClient.NotifyAPIDeployment(apiID, cfg, revisionID); err != nil {
+				if err := s.controlPlaneClient.NotifyAPIDeployment(apiID, cfg, deploymentID); err != nil {
 					log.Error("Failed to notify platform-api of successful deployment",
 						slog.String("api_id", apiID),
 						slog.Any("error", err))
