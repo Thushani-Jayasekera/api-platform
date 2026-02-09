@@ -312,7 +312,7 @@ func (s *GatewayService) DeleteGateway(gatewayID, orgID string) error {
 	}
 
 	// Check if there are any associations with this gateway
-	hasAssociations, err := s.gatewayRepo.HasGatewayAssociationsOrDeployments(gatewayID, orgID)
+	hasDeployments, err := s.gatewayRepo.HasGatewayDeployments(gatewayID, orgID)
 	if err != nil {
 		return fmt.Errorf("failed to check gateway deployments: %w", err)
 	}

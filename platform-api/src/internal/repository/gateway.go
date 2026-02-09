@@ -361,8 +361,10 @@ func (r *GatewayRepo) CountActiveTokens(gatewayId string) (int, error) {
 // HasGatewayDeployments checks if a gateway has any deployments
 func (r *GatewayRepo) HasGatewayDeployments(gatewayID, organizationID string) (bool, error) {
 	var deploymentCount int
-	deploymentQuery := `SELECT COUNT(*) FROM deployments WHERE gateway_uuid = ? AND organization_uuid = ?`
-	err := r.db.QueryRow(r.db.Rebind(deploymentQuery), gatewayID, organizationID).Scan(&deploymentCount)
+	deploymentQuery := `SELECT COUNT(*)
+		FROM deployment_status s
+		WHERE s.gateway_uuid = ? AND s.organization_uuid = ? AND s.status = ?`
+	err := r.db.QueryRow(r.db.Rebind(deploymentQuery), gatewayID, organizationID, string(model.DeploymentStatusDeployed)).Scan(&deploymentCount)
 	if err != nil {
 		return false, err
 	}
