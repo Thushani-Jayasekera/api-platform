@@ -10,6 +10,8 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/jackc/pgx/v5 v5.8.0
+	github.com/jmoiron/sqlx v1.4.0
 	github.com/knadh/koanf/parsers/toml/v2 v2.2.0
 	github.com/knadh/koanf/providers/env v1.1.0
 	github.com/knadh/koanf/providers/file v1.2.1
@@ -56,6 +58,9 @@ require (
 	github.com/goccy/go-yaml v1.19.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.13-0.20220915233716-71ac16282d12 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
@@ -88,6 +93,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/arch v0.23.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.12.0 // indirect

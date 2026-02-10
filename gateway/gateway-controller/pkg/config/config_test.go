@@ -56,7 +56,7 @@ func validConfig() *Config {
 					Timeouts: UpstreamTimeouts{
 						RouteTimeoutInMs:     60000,
 						RouteIdleTimeoutInMs: 30000,
-						ConnectTimeoutInMs:  5000,
+						ConnectTimeoutInMs:   5000,
 					},
 				},
 				PolicyEngine: PolicyEngineConfig{
@@ -134,28 +134,162 @@ func TestConfig_Validate_SQLiteConfig(t *testing.T) {
 func TestConfig_Validate_PostgresConfig(t *testing.T) {
 	tests := []struct {
 		name        string
-		host        string
-		database    string
+		configure   func(*Config)
 		wantErr     bool
 		errContains string
+		wantSSLMode string
 	}{
-		{name: "Valid postgres", host: "localhost", database: "testdb", wantErr: false},
-		{name: "Missing host", host: "", database: "testdb", wantErr: true, errContains: "storage.postgres.host is required"},
-		{name: "Missing database", host: "localhost", database: "", wantErr: true, errContains: "storage.postgres.database is required"},
+		{
+			name: "Valid postgres with fields",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+			},
+			wantErr: false,
+		},
+		{
+			name: "Valid postgres with dsn",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.DSN = "postgres://user:pass@localhost:5432/testdb?sslmode=require"
+			},
+			wantErr: false,
+		},
+		{
+			name: "Missing host when dsn empty",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+			},
+			wantErr:     true,
+			errContains: "storage.postgres.host is required",
+		},
+		{
+			name: "Missing database when dsn empty",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+			},
+			wantErr:     true,
+			errContains: "storage.postgres.database is required",
+		},
+		{
+			name: "Missing user when dsn empty",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+			},
+			wantErr:     true,
+			errContains: "storage.postgres.user is required",
+		},
+		{
+			name: "Invalid sslmode",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.GatewayController.Storage.Postgres.SSLMode = "bad"
+			},
+			wantErr:     true,
+			errContains: "storage.postgres.sslmode must be one of",
+		},
+		{
+			name: "Valid sslmode allow",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.GatewayController.Storage.Postgres.SSLMode = "allow"
+			},
+			wantErr:     false,
+			wantSSLMode: "allow",
+		},
+		{
+			name: "Valid sslmode prefer case-insensitive",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.GatewayController.Storage.Postgres.SSLMode = "PREFER"
+			},
+			wantErr:     false,
+			wantSSLMode: "prefer",
+		},
+		{
+			name: "Invalid max open conns",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.GatewayController.Storage.Postgres.MaxOpenConns = -1
+			},
+			wantErr:     true,
+			errContains: "storage.postgres.max_open_conns must be >= 1",
+		},
+		{
+			name: "Invalid max idle conns",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.GatewayController.Storage.Postgres.MaxIdleConns = -1
+			},
+			wantErr:     true,
+			errContains: "storage.postgres.max_idle_conns must be >= 0",
+		},
+		{
+			name: "Invalid postgres port",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.GatewayController.Storage.Postgres.Port = 70000
+			},
+			wantErr:     true,
+			errContains: "storage.postgres.port must be between 1 and 65535",
+		},
+		{
+			name: "Invalid conn max lifetime",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.GatewayController.Storage.Postgres.ConnMaxLifetime = -1 * time.Second
+			},
+			wantErr:     true,
+			errContains: "storage.postgres.conn_max_lifetime must be >= 0",
+		},
+		{
+			name: "Invalid conn max idle time",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.GatewayController.Storage.Postgres.ConnMaxIdleTime = -1 * time.Second
+			},
+			wantErr:     true,
+			errContains: "storage.postgres.conn_max_idle_time must be >= 0",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
 			cfg.GatewayController.Storage.Type = "postgres"
-			cfg.GatewayController.Storage.Postgres.Host = tt.host
-			cfg.GatewayController.Storage.Postgres.Database = tt.database
+			if tt.configure != nil {
+				tt.configure(cfg)
+			}
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tt.errContains)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
 			} else {
 				assert.NoError(t, err)
+				if tt.wantSSLMode != "" {
+					assert.Equal(t, tt.wantSSLMode, cfg.GatewayController.Storage.Postgres.SSLMode)
+				}
 			}
 		})
 	}
@@ -630,12 +764,12 @@ func TestConfig_ValidateTLSTrustedCertPath(t *testing.T) {
 
 func TestConfig_ValidateTimeoutConfig(t *testing.T) {
 	tests := []struct {
-		name            string
-		routeTimeout    uint32
-		idleTimeout     uint32
-		connectTimeout  uint32
-		wantErr         bool
-		errContains     string
+		name           string
+		routeTimeout   uint32
+		idleTimeout    uint32
+		connectTimeout uint32
+		wantErr        bool
+		errContains    string
 	}{
 		{name: "Valid timeouts", routeTimeout: 60000, idleTimeout: 30000, connectTimeout: 5000, wantErr: false},
 		{name: "Zero route timeout", routeTimeout: 0, idleTimeout: 30000, connectTimeout: 5000, wantErr: true, errContains: "route_timeout_in_ms must be positive"},

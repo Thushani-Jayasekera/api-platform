@@ -16,12 +16,37 @@
 # under the License.
 # --------------------------------------------------------------------
 
-.PHONY: test test-all test-verbose clean deps check-docker coverage-report build-coverage
+.PHONY: test test-postgres test-all test-verbose clean deps check-docker coverage-report build-coverage ensure-test-tags
+
+VERSION ?= $(shell cat ../VERSION 2>/dev/null | tr -d '[:space:]' || echo "0.0.1-SNAPSHOT")
+DOCKER_REGISTRY ?= ghcr.io/wso2/api-platform
+COVERAGE_IMAGES := gateway-controller-coverage gateway-runtime-coverage
+
+COMPOSE_FILE ?= docker-compose.test.yaml
+
+# Ensure :test tagged images exist; if not, tag from :VERSION
+# Tries coverage image first (from make build-coverage), then falls back to
+# non-coverage image (from make build-local) for local development convenience.
+ensure-test-tags:
+	@for img in $(COVERAGE_IMAGES); do \
+		if ! docker image inspect $(DOCKER_REGISTRY)/$$img:test >/dev/null 2>&1; then \
+			base=$${img%-coverage}; \
+			if docker image inspect $(DOCKER_REGISTRY)/$$img:$(VERSION) >/dev/null 2>&1; then \
+				echo "Tagging $(DOCKER_REGISTRY)/$$img:$(VERSION) -> :test"; \
+				docker tag $(DOCKER_REGISTRY)/$$img:$(VERSION) $(DOCKER_REGISTRY)/$$img:test; \
+			elif docker image inspect $(DOCKER_REGISTRY)/$$base:$(VERSION) >/dev/null 2>&1; then \
+				echo "Tagging $(DOCKER_REGISTRY)/$$base:$(VERSION) -> $(DOCKER_REGISTRY)/$$img:test"; \
+				docker tag $(DOCKER_REGISTRY)/$$base:$(VERSION) $(DOCKER_REGISTRY)/$$img:test; \
+			else \
+				echo "Error: No image found for $$img. Run 'make build-coverage' or 'make build-local' in gateway/ first." && exit 1; \
+			fi; \
+		fi; \
+	done
 
 # Run integration tests (always with coverage)
 # Requires: make build-coverage-image (run once before tests)
-test:
-	go test -v -timeout 30m ./...
+test: ensure-test-tags
+	COMPOSE_FILE=$(COMPOSE_FILE) go test -v -timeout 30m ./...
 
 # Build all coverage-instrumented gateway components
 build-coverage:
@@ -30,14 +55,19 @@ build-coverage:
 # Build and run tests in one command
 test-all: build-coverage test
 
+# Run integration tests against Postgres-backed controller
+test-postgres:
+	COMPOSE_FILE=docker-compose.test.postgres.yaml $(MAKE) test
+
 # Run tests with verbose output
-test-verbose:
-	go test -v -count=1 -timeout 30m ./...
+test-verbose: ensure-test-tags
+	COMPOSE_FILE=$(COMPOSE_FILE) go test -v -count=1 -timeout 30m ./...
 
 # Clean up test artifacts
 clean:
 	docker rm -f $$(docker ps -aq --filter "name=it-") 2>/dev/null || true
 	docker compose -f docker-compose.test.yaml -p gateway-it down -v --remove-orphans 2>/dev/null || true
+	docker compose -f docker-compose.test.postgres.yaml -p gateway-it down -v --remove-orphans 2>/dev/null || true
 	rm -rf coverage/*.out coverage/*.txt coverage/*.html coverage/merged coverage/gateway-controller reports/*.json
 
 # Install dependencies

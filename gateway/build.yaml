@@ -54,6 +54,8 @@ policies:
     gomodule: github.com/wso2/gateway-controllers/policies/regex-guardrail@v0
   - name: remove-headers
     gomodule: github.com/wso2/gateway-controllers/policies/remove-headers@v0
+  - name: request-rewrite
+    gomodule: github.com/wso2/gateway-controllers/policies/request-rewrite@v0
   - name: respond
     gomodule: github.com/wso2/gateway-controllers/policies/respond@v0
   - name: semantic-cache

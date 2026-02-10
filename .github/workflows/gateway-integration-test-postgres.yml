@@ -1,4 +1,4 @@
-name: Gateway Integration Test
+name: Gateway Integration Test (Postgres)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
       - main
     paths:
       - 'gateway/**'
-      - '.github/workflows/gateway-integration-test.yml'
+      - '.github/workflows/gateway-integration-test-postgres.yml'
 
 jobs:
   integration-test:
@@ -36,16 +36,42 @@ jobs:
             docker build -t ghcr.io/wso2/api-platform/$mock:latest tests/mock-servers/$mock
           done
 
+      - name: Verify gateway-controller uses PostgreSQL
+        run: |
+          set -euo pipefail
+          cd gateway/it
+
+          PROJECT="gateway-it-postgres-verify"
+          cleanup() {
+            docker compose -p "$PROJECT" -f docker-compose.test.postgres.yaml down -v --remove-orphans || true
+          }
+          trap cleanup EXIT
+
+          docker compose -p "$PROJECT" -f docker-compose.test.postgres.yaml up -d postgres gateway-controller
+
+          timeout 90 bash -c 'until curl -fsS http://localhost:9090/health >/dev/null; do sleep 2; done'
+
+          docker logs it-gateway-controller > /tmp/gateway-controller.log 2>&1 || true
+          grep -Eq "Initializing PostgreSQL storage|PostgreSQL schema up to date" /tmp/gateway-controller.log
+
+          schema_count="$(docker compose -p "$PROJECT" -f docker-compose.test.postgres.yaml exec -T postgres \
+            psql -U gateway -d gateway_test -tAc "SELECT COUNT(*) FROM schema_migrations WHERE id = 1 AND version >= 1;")"
+          [ "$schema_count" = "1" ]
+
+          conn_count="$(docker compose -p "$PROJECT" -f docker-compose.test.postgres.yaml exec -T postgres \
+            psql -U gateway -d gateway_test -tAc "SELECT COUNT(*) FROM pg_stat_activity WHERE application_name = 'gateway-controller';")"
+          [ "${conn_count:-0}" -ge 1 ]
+
       - name: Run integration tests
         run: |
           cd gateway
-          make test-integration
+          COMPOSE_FILE=docker-compose.test.postgres.yaml make test-integration
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: coverage-report
+          name: coverage-report-postgres
           path: gateway/it/coverage/output
           retention-days: 7
 
@@ -53,7 +79,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-reports
+          name: test-reports-postgres
           path: gateway/it/reports/
           retention-days: 7
 

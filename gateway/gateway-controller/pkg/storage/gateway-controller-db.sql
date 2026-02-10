@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     apiId TEXT NOT NULL,
 
     -- Comma-separated list of operations the key will have access to
-    operations TEXT NOT NULL DEFAULT '[*]',
+    operations TEXT NOT NULL DEFAULT '*',
 
     -- Key status
     status TEXT NOT NULL CHECK(status IN ('active', 'revoked', 'expired')) DEFAULT 'active',
@@ -165,6 +165,9 @@ CREATE INDEX IF NOT EXISTS idx_created_by ON api_keys(created_by);
 CREATE INDEX IF NOT EXISTS idx_api_key_source ON api_keys(source);
 CREATE INDEX IF NOT EXISTS idx_api_key_external_ref ON api_keys(external_ref_id);
 CREATE INDEX IF NOT EXISTS idx_api_key_index_key ON api_keys(index_key);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_external_api_key
+    ON api_keys(apiId, index_key)
+    WHERE source = 'external' AND index_key IS NOT NULL;
 
 -- Set schema version to 7 (deployments status CHECK constraint includes 'undeployed')
 PRAGMA user_version = 7;
