@@ -737,18 +737,18 @@ func (s *APIService) isValidVHost(vhost string) bool {
 
 // CreateAPIRequest represents the request to create a new API
 type CreateAPIRequest struct {
-	ID              string             `json:"id,omitempty"`
-	Name            string             `json:"name"`
-	Description     string             `json:"description,omitempty"`
-	Context         string             `json:"context"`
-	Version         string             `json:"version"`
-	CreatedBy       string             `json:"createdBy,omitempty"`
-	ProjectID       string             `json:"projectId"`
-	LifeCycleStatus string             `json:"lifeCycleStatus,omitempty"`
-	Kind            string             `json:"kind,omitempty"`
-	Transport       []string           `json:"transport,omitempty"`
-	Channels        []dto.Channel      `json:"channels,omitempty"`
-	Operations      []dto.Operation    `json:"operations,omitempty"`
+	ID              string              `json:"id,omitempty"`
+	Name            string              `json:"name"`
+	Description     string              `json:"description,omitempty"`
+	Context         string              `json:"context"`
+	Version         string              `json:"version"`
+	CreatedBy       string              `json:"createdBy,omitempty"`
+	ProjectID       string              `json:"projectId"`
+	LifeCycleStatus string              `json:"lifeCycleStatus,omitempty"`
+	Kind            string              `json:"kind,omitempty"`
+	Transport       []string            `json:"transport,omitempty"`
+	Channels        []dto.Channel       `json:"channels,omitempty"`
+	Operations      []dto.Operation     `json:"operations,omitempty"`
 	Upstream        *dto.UpstreamConfig `json:"upstream,omitempty"`
 }
 
@@ -1299,6 +1299,12 @@ func (s *APIService) ImportFromOpenAPI(req *dto.ImportOpenAPIRequest, orgId stri
 		LifeCycleStatus: mergedAPI.LifeCycleStatus,
 		Transport:       mergedAPI.Transport,
 		Operations:      mergedAPI.Operations,
+		Upstream:        mergedAPI.Upstream,
+	}
+
+	err = s.validateCreateAPIRequest(createReq, orgId)
+	if err != nil {
+		return nil, fmt.Errorf("validation failed for merged API details: %w", err)
 	}
 
 	// Create the API
