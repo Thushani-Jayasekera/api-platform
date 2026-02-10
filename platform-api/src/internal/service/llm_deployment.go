@@ -127,6 +127,7 @@ func (s *LLMProviderDeploymentService) DeployLLMProvider(providerID string, req 
 
 	// Generate deployment ID
 	deploymentID := uuid.New().String()
+	deployed := model.DeploymentStatusDeployed
 
 	deployment := &model.Deployment{
 		DeploymentID:     deploymentID,
@@ -137,6 +138,7 @@ func (s *LLMProviderDeploymentService) DeployLLMProvider(providerID string, req 
 		BaseDeploymentID: baseDeploymentID,
 		Content:          contentBytes,
 		Metadata:         req.Metadata,
+		Status:           &deployed,
 	}
 
 	if s.cfg.Deployments.MaxPerAPIGateway < 1 {
@@ -279,7 +281,7 @@ func (s *LLMProviderDeploymentService) UndeployLLMProviderDeployment(providerID,
 	if err != nil {
 		return nil, fmt.Errorf("failed to get gateway: %w", err)
 	}
-	if gateway == nil {
+	if gateway == nil || gateway.OrganizationID != orgUUID {
 		return nil, constants.ErrGatewayNotFound
 	}
 
