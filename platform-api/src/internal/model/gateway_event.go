@@ -51,8 +51,8 @@ type DeploymentEvent struct {
 	// ApiId identifies the deployed API
 	ApiId string `json:"apiId"`
 
-	// DeploymentID identifies the specific deployment artifact
-	DeploymentID string `json:"deploymentId"`
+	// RevisionID identifies the specific API revision
+	RevisionID string `json:"revisionId"`
 
 	// Vhost specifies the virtual host where the API is deployed
 	Vhost string `json:"vhost"`

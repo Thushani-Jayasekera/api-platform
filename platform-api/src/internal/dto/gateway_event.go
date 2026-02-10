@@ -55,8 +55,8 @@ type DeploymentEventDTO struct {
 	// ApiId identifies the deployed API
 	ApiId string `json:"apiId"`
 
-	// DeploymentID identifies the specific API deployment
-	DeploymentId string `json:"deploymentId"`
+	// RevisionID identifies the specific API deployment
+	RevisionID string `json:"revisionId"`
 
 	// Vhost specifies the virtual host
 	Vhost string `json:"vhost"`
