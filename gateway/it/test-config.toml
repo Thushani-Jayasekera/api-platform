@@ -237,6 +237,10 @@ uri = "http://mock-jwks:8080/jwks"
 [policy_configurations.ratelimit_v010]
 algorithm = "fixed-window"
 
+[policy_configurations.ratelimit_v010.redis]
+password = ""
+username = ""
+
 
 # =============================================================================
 # ANALYTICS CONFIGURATION

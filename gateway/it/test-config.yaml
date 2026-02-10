@@ -375,6 +375,9 @@ policy_configurations:
   ratelimit_v010:
     # Rate limiting algorithm: "gcra" (smooth rate limiting with burst support) or "fixed-window" (simple counter)
     algorithm: fixed-window
+    redis:
+      password: ""
+      username: ""
 
   # Model Weighted Round-Robin Policy Configuration
   modelweightedroundrobin_v010:
@@ -481,4 +484,3 @@ vector_db_provider_username: "default"
 vector_db_provider_password: "redis"
 vector_db_provider_database: "0"
 vector_db_provider_ttl: 3600
-
