@@ -281,7 +281,7 @@ func (s *APIServer) CreateAPI(c *gin.Context) {
 			if err := s.policyManager.RemovePolicy(policyID); err != nil {
 				// Only treat "policy not found" as non-error (API may never have had policies)
 				// Other errors (storage failures, snapshot update failures) should be logged as errors
-				if errors.Is(err, storage.ErrPolicyNotFound) {
+				if storage.IsPolicyNotFoundError(err) {
 					log.Debug("No policy configuration to remove", slog.String("policy_id", policyID))
 				} else {
 					log.Error("Failed to remove policy configuration",

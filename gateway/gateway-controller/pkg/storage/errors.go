@@ -64,3 +64,8 @@ func IsDatabaseUnavailableError(err error) bool {
 func IsOperationNotAllowedError(err error) bool {
 	return errors.Is(err, ErrOperationNotAllowed)
 }
+
+// IsPolicyNotFoundError checks if an error is a policy not found error
+func IsPolicyNotFoundError(err error) bool {
+	return errors.Is(err, ErrPolicyNotFound)
+}

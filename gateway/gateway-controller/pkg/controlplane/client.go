@@ -22,7 +22,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -663,7 +662,7 @@ func (c *Client) handleAPIDeployedEvent(event map[string]interface{}) {
 			if err := c.policyManager.RemovePolicy(policyID); err != nil {
 				// Only treat "not found" as non-error (API may never have had policies)
 				// Other errors (storage failures, snapshot update failures) should be logged as errors
-				if errors.Is(err, storage.ErrPolicyNotFound) {
+				if storage.IsPolicyNotFoundError(err) {
 					c.logger.Debug("No policy configuration to remove",
 						slog.String("api_id", apiID),
 						slog.String("policy_id", policyID),
