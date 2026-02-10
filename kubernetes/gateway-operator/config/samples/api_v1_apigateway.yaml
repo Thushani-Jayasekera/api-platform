@@ -60,7 +60,7 @@ data:
       # Shared configuration for gateway-controller and policy-engine
       # This config is mounted to both components as /configs/config.yaml
       config:
-        gateway_controller:
+        controller:
           # Server configuration
           server:
             # REST API port for gateway management
@@ -73,7 +73,7 @@ data:
             shutdown_timeout: 15s
 
           # Policy xDS Server configuration
-          policyserver:
+          policy_server:
             # Enable or disable the policy xDS server
             enabled: true
 

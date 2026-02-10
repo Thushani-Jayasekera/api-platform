@@ -431,22 +431,22 @@ func createTestAPIServer() *APIServer {
 		},
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 		systemConfig: &config.Config{
-			GatewayController: config.GatewayController{
-				Router: config.RouterConfig{
-					GatewayHost: "localhost",
-					VHosts:      *vhosts,
-				},
+			Controller: config.Controller{
 				APIKey: config.APIKeyConfig{
 					Algorithm:    "sha256",
 					MinKeyLength: 32,
 					MaxKeyLength: 128,
 				},
 			},
+			Router: config.RouterConfig{
+				GatewayHost: "localhost",
+				VHosts:      *vhosts,
+			},
 		},
 	}
 
 	// Initialize API key service (needed for API key operations)
-	apiKeyService := utils.NewAPIKeyService(store, mockDB, nil, &server.systemConfig.GatewayController.APIKey)
+	apiKeyService := utils.NewAPIKeyService(store, mockDB, nil, &server.systemConfig.Controller.APIKey)
 	server.apiKeyService = apiKeyService
 
 	return server
@@ -1435,14 +1435,14 @@ func TestNewAPIServer(t *testing.T) {
 	}
 
 	systemConfig := &config.Config{
-		GatewayController: config.GatewayController{
-			Router: config.RouterConfig{
-				GatewayHost: "localhost",
-				VHosts:      *vhosts,
-			},
+		Controller: config.Controller{
 			APIKey: config.APIKeyConfig{
 				APIKeysPerUserPerAPI: 5,
 			},
+		},
+		Router: config.RouterConfig{
+			GatewayHost: "localhost",
+			VHosts:      *vhosts,
 		},
 	}
 
@@ -1466,7 +1466,7 @@ func TestNewAPIServer(t *testing.T) {
 		assert.NotEmpty(t, policyDefs)
 		assert.NotEmpty(t, templateDefs)
 		assert.NotNil(t, systemConfig)
-		assert.Equal(t, "localhost", systemConfig.GatewayController.Router.GatewayHost)
+		assert.Equal(t, "localhost", systemConfig.Router.GatewayHost)
 	})
 }
 

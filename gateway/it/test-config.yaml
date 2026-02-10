@@ -1,4 +1,4 @@
-gateway_controller:
+controller:
 
   # Server configuration
   server:
@@ -12,7 +12,7 @@ gateway_controller:
     shutdown_timeout: 15s
 
   # Policy xDS Server configuration
-  policyserver:
+  policy_server:
     # Enable or disable the policy xDS server
     enabled: true
 
@@ -48,7 +48,7 @@ gateway_controller:
     definitions_path: ./default-policies
 
   # Router (Envoy) configuration
-  router:
+router:
     # Gateway host for incoming requests
     gateway_host: "*"
     # Event Gateway (WebSub Hub) configuration
@@ -133,9 +133,9 @@ gateway_controller:
 
       # Timeout configurations for upstream connections (milliseconds; 6000 = 6s for fast backend_timeout it scenario global-default)
       timeouts:
-        route_timeout_in_ms: 60000
-        route_idle_timeout_in_ms: 300000
-        connect_timeout_in_ms: 5000
+        route_timeout_ms: 60000
+        route_idle_timeout_ms: 300000
+        connect_timeout_ms: 5000
       
     tracing_service_name: router
 

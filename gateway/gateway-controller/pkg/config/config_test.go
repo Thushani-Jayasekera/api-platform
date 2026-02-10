@@ -31,46 +31,13 @@ import (
 // validConfig returns a valid configuration for testing
 func validConfig() *Config {
 	return &Config{
-		GatewayController: GatewayController{
+		Controller: Controller{
 			Server: ServerConfig{
 				APIPort: 8080,
 				XDSPort: 18000,
 			},
 			Storage: StorageConfig{
 				Type: "memory",
-			},
-			Router: RouterConfig{
-				ListenerPort: 9090,
-				HTTPSEnabled: false,
-				AccessLogs: AccessLogsConfig{
-					Enabled:    true,
-					Format:     "json",
-					JSONFields: map[string]string{"status": "%RESPONSE_CODE%"},
-				},
-				Upstream: RouterUpstream{
-					TLS: UpstreamTLS{
-						MinimumProtocolVersion: constants.TLSVersion12,
-						MaximumProtocolVersion: constants.TLSVersion13,
-						DisableSslVerification: true,
-					},
-					Timeouts: UpstreamTimeouts{
-						RouteTimeoutInMs:     60000,
-						RouteIdleTimeoutInMs: 30000,
-						ConnectTimeoutInMs:   5000,
-					},
-				},
-				PolicyEngine: PolicyEngineConfig{
-					Enabled:           false,
-					RouteCacheAction:  "DEFAULT",
-					RequestHeaderMode: "DEFAULT",
-				},
-				VHosts: VHostsConfig{
-					Main:    VHostEntry{Default: "localhost"},
-					Sandbox: VHostEntry{Default: "sandbox.localhost"},
-				},
-				HTTPListener: HTTPListenerConfig{
-					ServerHeaderTransformation: commonconstants.OVERWRITE,
-				},
 			},
 			Logging: LoggingConfig{
 				Level:  "info",
@@ -88,6 +55,39 @@ func validConfig() *Config {
 			},
 			Metrics: MetricsConfig{
 				Enabled: false,
+			},
+		},
+		Router: RouterConfig{
+			ListenerPort: 9090,
+			HTTPSEnabled: false,
+			AccessLogs: AccessLogsConfig{
+				Enabled:    true,
+				Format:     "json",
+				JSONFields: map[string]string{"status": "%RESPONSE_CODE%"},
+			},
+			Upstream: RouterUpstream{
+				TLS: UpstreamTLS{
+					MinimumProtocolVersion: constants.TLSVersion12,
+					MaximumProtocolVersion: constants.TLSVersion13,
+					DisableSslVerification: true,
+				},
+				Timeouts: UpstreamTimeouts{
+					RouteTimeoutMs:     60000,
+					RouteIdleTimeoutMs: 30000,
+					ConnectTimeoutMs:   5000,
+				},
+			},
+			PolicyEngine: PolicyEngineConfig{
+				Enabled:           false,
+				RouteCacheAction:  "DEFAULT",
+				RequestHeaderMode: "DEFAULT",
+			},
+			VHosts: VHostsConfig{
+				Main:    VHostEntry{Default: "localhost"},
+				Sandbox: VHostEntry{Default: "sandbox.localhost"},
+			},
+			HTTPListener: HTTPListenerConfig{
+				ServerHeaderTransformation: commonconstants.OVERWRITE,
 			},
 		},
 	}
@@ -109,7 +109,7 @@ func TestConfig_Validate_StorageType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Storage.Type = tt.storageType
+			cfg.Controller.Storage.Type = tt.storageType
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -125,8 +125,8 @@ func TestConfig_Validate_StorageType(t *testing.T) {
 
 func TestConfig_Validate_SQLiteConfig(t *testing.T) {
 	cfg := validConfig()
-	cfg.GatewayController.Storage.Type = "sqlite"
-	cfg.GatewayController.Storage.SQLite.Path = "/tmp/test.db"
+	cfg.Controller.Storage.Type = "sqlite"
+	cfg.Controller.Storage.SQLite.Path = "/tmp/test.db"
 	err := cfg.Validate()
 	assert.NoError(t, err)
 }
@@ -142,24 +142,24 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		{
 			name: "Valid postgres with fields",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Host = "localhost"
-				cfg.GatewayController.Storage.Postgres.Database = "testdb"
-				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.Controller.Storage.Postgres.Host = "localhost"
+				cfg.Controller.Storage.Postgres.Database = "testdb"
+				cfg.Controller.Storage.Postgres.User = "user"
 			},
 			wantErr: false,
 		},
 		{
 			name: "Valid postgres with dsn",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.DSN = "postgres://user:pass@localhost:5432/testdb?sslmode=require"
+				cfg.Controller.Storage.Postgres.DSN = "postgres://user:pass@localhost:5432/testdb?sslmode=require"
 			},
 			wantErr: false,
 		},
 		{
 			name: "Missing host when dsn empty",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Database = "testdb"
-				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.Controller.Storage.Postgres.Database = "testdb"
+				cfg.Controller.Storage.Postgres.User = "user"
 			},
 			wantErr:     true,
 			errContains: "storage.postgres.host is required",
@@ -167,8 +167,8 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		{
 			name: "Missing database when dsn empty",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Host = "localhost"
-				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.Controller.Storage.Postgres.Host = "localhost"
+				cfg.Controller.Storage.Postgres.User = "user"
 			},
 			wantErr:     true,
 			errContains: "storage.postgres.database is required",
@@ -176,8 +176,8 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		{
 			name: "Missing user when dsn empty",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Host = "localhost"
-				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.Controller.Storage.Postgres.Host = "localhost"
+				cfg.Controller.Storage.Postgres.Database = "testdb"
 			},
 			wantErr:     true,
 			errContains: "storage.postgres.user is required",
@@ -185,10 +185,10 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		{
 			name: "Invalid sslmode",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Host = "localhost"
-				cfg.GatewayController.Storage.Postgres.Database = "testdb"
-				cfg.GatewayController.Storage.Postgres.User = "user"
-				cfg.GatewayController.Storage.Postgres.SSLMode = "bad"
+				cfg.Controller.Storage.Postgres.Host = "localhost"
+				cfg.Controller.Storage.Postgres.Database = "testdb"
+				cfg.Controller.Storage.Postgres.User = "user"
+				cfg.Controller.Storage.Postgres.SSLMode = "bad"
 			},
 			wantErr:     true,
 			errContains: "storage.postgres.sslmode must be one of",
@@ -196,10 +196,10 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		{
 			name: "Valid sslmode allow",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Host = "localhost"
-				cfg.GatewayController.Storage.Postgres.Database = "testdb"
-				cfg.GatewayController.Storage.Postgres.User = "user"
-				cfg.GatewayController.Storage.Postgres.SSLMode = "allow"
+				cfg.Controller.Storage.Postgres.Host = "localhost"
+				cfg.Controller.Storage.Postgres.Database = "testdb"
+				cfg.Controller.Storage.Postgres.User = "user"
+				cfg.Controller.Storage.Postgres.SSLMode = "allow"
 			},
 			wantErr:     false,
 			wantSSLMode: "allow",
@@ -207,10 +207,10 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		{
 			name: "Valid sslmode prefer case-insensitive",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Host = "localhost"
-				cfg.GatewayController.Storage.Postgres.Database = "testdb"
-				cfg.GatewayController.Storage.Postgres.User = "user"
-				cfg.GatewayController.Storage.Postgres.SSLMode = "PREFER"
+				cfg.Controller.Storage.Postgres.Host = "localhost"
+				cfg.Controller.Storage.Postgres.Database = "testdb"
+				cfg.Controller.Storage.Postgres.User = "user"
+				cfg.Controller.Storage.Postgres.SSLMode = "PREFER"
 			},
 			wantErr:     false,
 			wantSSLMode: "prefer",
@@ -218,10 +218,10 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		{
 			name: "Invalid max open conns",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Host = "localhost"
-				cfg.GatewayController.Storage.Postgres.Database = "testdb"
-				cfg.GatewayController.Storage.Postgres.User = "user"
-				cfg.GatewayController.Storage.Postgres.MaxOpenConns = -1
+				cfg.Controller.Storage.Postgres.Host = "localhost"
+				cfg.Controller.Storage.Postgres.Database = "testdb"
+				cfg.Controller.Storage.Postgres.User = "user"
+				cfg.Controller.Storage.Postgres.MaxOpenConns = -1
 			},
 			wantErr:     true,
 			errContains: "storage.postgres.max_open_conns must be >= 1",
@@ -229,10 +229,10 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		{
 			name: "Invalid max idle conns",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Host = "localhost"
-				cfg.GatewayController.Storage.Postgres.Database = "testdb"
-				cfg.GatewayController.Storage.Postgres.User = "user"
-				cfg.GatewayController.Storage.Postgres.MaxIdleConns = -1
+				cfg.Controller.Storage.Postgres.Host = "localhost"
+				cfg.Controller.Storage.Postgres.Database = "testdb"
+				cfg.Controller.Storage.Postgres.User = "user"
+				cfg.Controller.Storage.Postgres.MaxIdleConns = -1
 			},
 			wantErr:     true,
 			errContains: "storage.postgres.max_idle_conns must be >= 0",
@@ -240,10 +240,10 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		{
 			name: "Invalid postgres port",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Host = "localhost"
-				cfg.GatewayController.Storage.Postgres.Database = "testdb"
-				cfg.GatewayController.Storage.Postgres.User = "user"
-				cfg.GatewayController.Storage.Postgres.Port = 70000
+				cfg.Controller.Storage.Postgres.Host = "localhost"
+				cfg.Controller.Storage.Postgres.Database = "testdb"
+				cfg.Controller.Storage.Postgres.User = "user"
+				cfg.Controller.Storage.Postgres.Port = 70000
 			},
 			wantErr:     true,
 			errContains: "storage.postgres.port must be between 1 and 65535",
@@ -251,10 +251,10 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		{
 			name: "Invalid conn max lifetime",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Host = "localhost"
-				cfg.GatewayController.Storage.Postgres.Database = "testdb"
-				cfg.GatewayController.Storage.Postgres.User = "user"
-				cfg.GatewayController.Storage.Postgres.ConnMaxLifetime = -1 * time.Second
+				cfg.Controller.Storage.Postgres.Host = "localhost"
+				cfg.Controller.Storage.Postgres.Database = "testdb"
+				cfg.Controller.Storage.Postgres.User = "user"
+				cfg.Controller.Storage.Postgres.ConnMaxLifetime = -1 * time.Second
 			},
 			wantErr:     true,
 			errContains: "storage.postgres.conn_max_lifetime must be >= 0",
@@ -262,10 +262,10 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		{
 			name: "Invalid conn max idle time",
 			configure: func(cfg *Config) {
-				cfg.GatewayController.Storage.Postgres.Host = "localhost"
-				cfg.GatewayController.Storage.Postgres.Database = "testdb"
-				cfg.GatewayController.Storage.Postgres.User = "user"
-				cfg.GatewayController.Storage.Postgres.ConnMaxIdleTime = -1 * time.Second
+				cfg.Controller.Storage.Postgres.Host = "localhost"
+				cfg.Controller.Storage.Postgres.Database = "testdb"
+				cfg.Controller.Storage.Postgres.User = "user"
+				cfg.Controller.Storage.Postgres.ConnMaxIdleTime = -1 * time.Second
 			},
 			wantErr:     true,
 			errContains: "storage.postgres.conn_max_idle_time must be >= 0",
@@ -275,10 +275,9 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Storage.Type = "postgres"
-			if tt.configure != nil {
-				tt.configure(cfg)
-			}
+			cfg.Controller.Storage.Type = "postgres"
+			cfg.Controller.Storage.Postgres.Host = tt.host
+			cfg.Controller.Storage.Postgres.Database = tt.database
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -310,7 +309,7 @@ func TestConfig_Validate_AccessLogFormat(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.AccessLogs.Format = tt.format
+			cfg.Router.AccessLogs.Format = tt.format
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -374,10 +373,10 @@ func TestConfig_Validate_AccessLogFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.AccessLogs.Enabled = tt.enabled
-			cfg.GatewayController.Router.AccessLogs.Format = tt.format
-			cfg.GatewayController.Router.AccessLogs.JSONFields = tt.jsonFields
-			cfg.GatewayController.Router.AccessLogs.TextFormat = tt.textFormat
+			cfg.Router.AccessLogs.Enabled = tt.enabled
+			cfg.Router.AccessLogs.Format = tt.format
+			cfg.Router.AccessLogs.JSONFields = tt.jsonFields
+			cfg.Router.AccessLogs.TextFormat = tt.textFormat
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -407,7 +406,7 @@ func TestConfig_Validate_LogLevel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Logging.Level = tt.level
+			cfg.Controller.Logging.Level = tt.level
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -433,7 +432,7 @@ func TestConfig_Validate_LogFormat(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Logging.Format = tt.format
+			cfg.Controller.Logging.Format = tt.format
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -470,10 +469,10 @@ func TestConfig_Validate_Ports(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Server.APIPort = tt.apiPort
-			cfg.GatewayController.Server.XDSPort = tt.xdsPort
-			cfg.GatewayController.AdminServer.Enabled = tt.adminEnable
-			cfg.GatewayController.AdminServer.Port = tt.adminPort
+			cfg.Controller.Server.APIPort = tt.apiPort
+			cfg.Controller.Server.XDSPort = tt.xdsPort
+			cfg.Controller.AdminServer.Enabled = tt.adminEnable
+			cfg.Controller.AdminServer.Port = tt.adminPort
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -509,17 +508,21 @@ func TestConfig_Validate_MetricsConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Metrics.Enabled = tt.enabled
-			cfg.GatewayController.Metrics.Port = tt.port
+			cfg.Controller.Metrics.Enabled = tt.enabled
+			cfg.Controller.Metrics.Port = tt.port
 			if tt.apiPort != 0 {
-				cfg.GatewayController.Server.APIPort = tt.apiPort
+				cfg.Controller.Server.APIPort = tt.apiPort
 			}
 			if tt.xdsPort != 0 {
-				cfg.GatewayController.Server.XDSPort = tt.xdsPort
+				cfg.Controller.Server.XDSPort = tt.xdsPort
 			}
-			cfg.GatewayController.AdminServer.Enabled = tt.adminEnable
+			cfg.Controller.AdminServer.Enabled = tt.adminEnable
 			if tt.adminPort != 0 {
-				cfg.GatewayController.AdminServer.Port = tt.adminPort
+				cfg.Controller.AdminServer.Port = tt.adminPort
+			}
+			cfg.Controller.AdminServer.Enabled = tt.adminEnable
+			if tt.adminPort != 0 {
+				cfg.Controller.AdminServer.Port = tt.adminPort
 			}
 			err := cfg.Validate()
 			if tt.wantErr {
@@ -547,7 +550,7 @@ func TestConfig_Validate_RouterListenerPort(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.ListenerPort = tt.port
+			cfg.Router.ListenerPort = tt.port
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -582,8 +585,8 @@ func TestConfig_Validate_HTTPSPort(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.HTTPSEnabled = tt.httpsEnabled
-			cfg.GatewayController.Router.HTTPSPort = tt.httpsPort
+			cfg.Router.HTTPSEnabled = tt.httpsEnabled
+			cfg.Router.HTTPSPort = tt.httpsPort
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -615,10 +618,10 @@ func TestConfig_ValidateEventGatewayConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.EventGateway.Enabled = true
-			cfg.GatewayController.Router.EventGateway.WebSubHubPort = tt.webSubHubPort
-			cfg.GatewayController.Router.EventGateway.WebSubHubListenerPort = tt.webSubHubListenerPort
-			cfg.GatewayController.Router.EventGateway.TimeoutSeconds = tt.timeoutSeconds
+			cfg.Router.EventGateway.Enabled = true
+			cfg.Router.EventGateway.WebSubHubPort = tt.webSubHubPort
+			cfg.Router.EventGateway.WebSubHubListenerPort = tt.webSubHubListenerPort
+			cfg.Router.EventGateway.TimeoutSeconds = tt.timeoutSeconds
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -695,10 +698,10 @@ func TestConfig_ValidateControlPlaneConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.ControlPlane.Host = tt.host
-			cfg.GatewayController.ControlPlane.ReconnectInitial = tt.reconnectInitial
-			cfg.GatewayController.ControlPlane.ReconnectMax = tt.reconnectMax
-			cfg.GatewayController.ControlPlane.PollingInterval = tt.pollingInterval
+			cfg.Controller.ControlPlane.Host = tt.host
+			cfg.Controller.ControlPlane.ReconnectInitial = tt.reconnectInitial
+			cfg.Controller.ControlPlane.ReconnectMax = tt.reconnectMax
+			cfg.Controller.ControlPlane.PollingInterval = tt.pollingInterval
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -731,8 +734,8 @@ func TestConfig_ValidateTLSConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.Upstream.TLS.MinimumProtocolVersion = tt.minVersion
-			cfg.GatewayController.Router.Upstream.TLS.MaximumProtocolVersion = tt.maxVersion
+			cfg.Router.Upstream.TLS.MinimumProtocolVersion = tt.minVersion
+			cfg.Router.Upstream.TLS.MaximumProtocolVersion = tt.maxVersion
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -759,7 +762,7 @@ func TestConfig_ValidateTLSCiphers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.Upstream.TLS.Ciphers = tt.ciphers
+			cfg.Router.Upstream.TLS.Ciphers = tt.ciphers
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -773,14 +776,14 @@ func TestConfig_ValidateTLSCiphers(t *testing.T) {
 
 func TestConfig_ValidateTLSTrustedCertPath(t *testing.T) {
 	cfg := validConfig()
-	cfg.GatewayController.Router.Upstream.TLS.DisableSslVerification = false
-	cfg.GatewayController.Router.Upstream.TLS.TrustedCertPath = ""
+	cfg.Router.Upstream.TLS.DisableSslVerification = false
+	cfg.Router.Upstream.TLS.TrustedCertPath = ""
 	err := cfg.Validate()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "trusted_cert_path is required when SSL verification is enabled")
 
 	// With path set
-	cfg.GatewayController.Router.Upstream.TLS.TrustedCertPath = "/path/to/ca.crt"
+	cfg.Router.Upstream.TLS.TrustedCertPath = "/path/to/ca.crt"
 	err = cfg.Validate()
 	assert.NoError(t, err)
 }
@@ -795,20 +798,20 @@ func TestConfig_ValidateTimeoutConfig(t *testing.T) {
 		errContains    string
 	}{
 		{name: "Valid timeouts", routeTimeout: 60000, idleTimeout: 30000, connectTimeout: 5000, wantErr: false},
-		{name: "Zero route timeout", routeTimeout: 0, idleTimeout: 30000, connectTimeout: 5000, wantErr: true, errContains: "route_timeout_in_ms must be positive"},
-		{name: "Zero idle timeout", routeTimeout: 60000, idleTimeout: 0, connectTimeout: 5000, wantErr: true, errContains: "route_idle_timeout_in_ms must be positive"},
-		{name: "Zero connect timeout", routeTimeout: 60000, idleTimeout: 30000, connectTimeout: 0, wantErr: true, errContains: "connect_timeout_in_ms must be positive"},
+		{name: "Zero route timeout", routeTimeout: 0, idleTimeout: 30000, connectTimeout: 5000, wantErr: true, errContains: "route_timeout_ms must be positive"},
+		{name: "Zero idle timeout", routeTimeout: 60000, idleTimeout: 0, connectTimeout: 5000, wantErr: true, errContains: "route_idle_timeout_ms must be positive"},
+		{name: "Zero connect timeout", routeTimeout: 60000, idleTimeout: 30000, connectTimeout: 0, wantErr: true, errContains: "connect_timeout_ms must be positive"},
 		{name: "Route exceeds max reasonable", routeTimeout: constants.MaxReasonableTimeoutMs + 1, idleTimeout: 30000, connectTimeout: 5000, wantErr: true, errContains: "exceeds maximum reasonable timeout"},
-		{name: "Idle exceeds max reasonable", routeTimeout: 60000, idleTimeout: constants.MaxReasonableTimeoutMs + 1, connectTimeout: 5000, wantErr: true, errContains: "route_idle_timeout_in_ms"},
-		{name: "Connect exceeds max reasonable", routeTimeout: 60000, idleTimeout: 30000, connectTimeout: constants.MaxReasonableTimeoutMs + 1, wantErr: true, errContains: "connect_timeout_in_ms"},
+		{name: "Idle exceeds max reasonable", routeTimeout: 60000, idleTimeout: constants.MaxReasonableTimeoutMs + 1, connectTimeout: 5000, wantErr: true, errContains: "route_idle_timeout_ms"},
+		{name: "Connect exceeds max reasonable", routeTimeout: 60000, idleTimeout: 30000, connectTimeout: constants.MaxReasonableTimeoutMs + 1, wantErr: true, errContains: "connect_timeout_ms"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.Upstream.Timeouts.RouteTimeoutInMs = tt.routeTimeout
-			cfg.GatewayController.Router.Upstream.Timeouts.RouteIdleTimeoutInMs = tt.idleTimeout
-			cfg.GatewayController.Router.Upstream.Timeouts.ConnectTimeoutInMs = tt.connectTimeout
+			cfg.Router.Upstream.Timeouts.RouteTimeoutMs = tt.routeTimeout
+			cfg.Router.Upstream.Timeouts.RouteIdleTimeoutMs = tt.idleTimeout
+			cfg.Router.Upstream.Timeouts.ConnectTimeoutMs = tt.connectTimeout
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -851,14 +854,14 @@ func TestConfig_ValidatePolicyEngineConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.PolicyEngine.Enabled = tt.enabled
-			cfg.GatewayController.Router.PolicyEngine.Mode = tt.mode
-			cfg.GatewayController.Router.PolicyEngine.Host = tt.host
-			cfg.GatewayController.Router.PolicyEngine.Port = tt.port
-			cfg.GatewayController.Router.PolicyEngine.TimeoutMs = tt.timeoutMs
-			cfg.GatewayController.Router.PolicyEngine.MessageTimeoutMs = tt.messageTimeoutMs
-			cfg.GatewayController.Router.PolicyEngine.RouteCacheAction = tt.routeCacheAction
-			cfg.GatewayController.Router.PolicyEngine.RequestHeaderMode = tt.headerMode
+			cfg.Router.PolicyEngine.Enabled = tt.enabled
+			cfg.Router.PolicyEngine.Mode = tt.mode
+			cfg.Router.PolicyEngine.Host = tt.host
+			cfg.Router.PolicyEngine.Port = tt.port
+			cfg.Router.PolicyEngine.TimeoutMs = tt.timeoutMs
+			cfg.Router.PolicyEngine.MessageTimeoutMs = tt.messageTimeoutMs
+			cfg.Router.PolicyEngine.RouteCacheAction = tt.routeCacheAction
+			cfg.Router.PolicyEngine.RequestHeaderMode = tt.headerMode
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -889,17 +892,17 @@ func TestConfig_ValidatePolicyEngineTLS(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.PolicyEngine.Enabled = true
-			cfg.GatewayController.Router.PolicyEngine.Mode = "tcp" // TLS only supported in TCP mode
-			cfg.GatewayController.Router.PolicyEngine.Host = "localhost"
-			cfg.GatewayController.Router.PolicyEngine.Port = 50051
-			cfg.GatewayController.Router.PolicyEngine.TimeoutMs = 1000
-			cfg.GatewayController.Router.PolicyEngine.MessageTimeoutMs = 500
-			cfg.GatewayController.Router.PolicyEngine.RouteCacheAction = "DEFAULT"
-			cfg.GatewayController.Router.PolicyEngine.RequestHeaderMode = "DEFAULT"
-			cfg.GatewayController.Router.PolicyEngine.TLS.Enabled = tt.tlsEnabled
-			cfg.GatewayController.Router.PolicyEngine.TLS.CertPath = tt.certPath
-			cfg.GatewayController.Router.PolicyEngine.TLS.KeyPath = tt.keyPath
+			cfg.Router.PolicyEngine.Enabled = true
+			cfg.Router.PolicyEngine.Mode = "tcp" // TLS only supported in TCP mode
+			cfg.Router.PolicyEngine.Host = "localhost"
+			cfg.Router.PolicyEngine.Port = 50051
+			cfg.Router.PolicyEngine.TimeoutMs = 1000
+			cfg.Router.PolicyEngine.MessageTimeoutMs = 500
+			cfg.Router.PolicyEngine.RouteCacheAction = "DEFAULT"
+			cfg.Router.PolicyEngine.RequestHeaderMode = "DEFAULT"
+			cfg.Router.PolicyEngine.TLS.Enabled = tt.tlsEnabled
+			cfg.Router.PolicyEngine.TLS.CertPath = tt.certPath
+			cfg.Router.PolicyEngine.TLS.KeyPath = tt.keyPath
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -969,15 +972,15 @@ func TestConfig_ValidatePolicyEngineMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.PolicyEngine.Enabled = true
-			cfg.GatewayController.Router.PolicyEngine.Mode = tt.mode
-			cfg.GatewayController.Router.PolicyEngine.Host = tt.host
-			cfg.GatewayController.Router.PolicyEngine.Port = tt.port
-			cfg.GatewayController.Router.PolicyEngine.TimeoutMs = 1000
-			cfg.GatewayController.Router.PolicyEngine.MessageTimeoutMs = 500
-			cfg.GatewayController.Router.PolicyEngine.RouteCacheAction = "DEFAULT"
-			cfg.GatewayController.Router.PolicyEngine.RequestHeaderMode = "DEFAULT"
-			cfg.GatewayController.Router.PolicyEngine.TLS.Enabled = tt.tlsEnabled
+			cfg.Router.PolicyEngine.Enabled = true
+			cfg.Router.PolicyEngine.Mode = tt.mode
+			cfg.Router.PolicyEngine.Host = tt.host
+			cfg.Router.PolicyEngine.Port = tt.port
+			cfg.Router.PolicyEngine.TimeoutMs = 1000
+			cfg.Router.PolicyEngine.MessageTimeoutMs = 500
+			cfg.Router.PolicyEngine.RouteCacheAction = "DEFAULT"
+			cfg.Router.PolicyEngine.RequestHeaderMode = "DEFAULT"
+			cfg.Router.PolicyEngine.TLS.Enabled = tt.tlsEnabled
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -1010,10 +1013,10 @@ func TestConfig_ValidateVHostsConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.VHosts.Main.Default = tt.mainDefault
-			cfg.GatewayController.Router.VHosts.Sandbox.Default = tt.sandboxDefault
-			cfg.GatewayController.Router.VHosts.Main.Domains = tt.mainDomains
-			cfg.GatewayController.Router.VHosts.Sandbox.Domains = tt.sandboxDomains
+			cfg.Router.VHosts.Main.Default = tt.mainDefault
+			cfg.Router.VHosts.Sandbox.Default = tt.sandboxDefault
+			cfg.Router.VHosts.Main.Domains = tt.mainDomains
+			cfg.Router.VHosts.Sandbox.Domains = tt.sandboxDomains
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -1176,8 +1179,8 @@ func TestConfig_ValidateAuthConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Auth.IDP.Enabled = tt.idpEnabled
-			cfg.GatewayController.Auth.IDP.RoleMapping = tt.roleMapping
+			cfg.Controller.Auth.IDP.Enabled = tt.idpEnabled
+			cfg.Controller.Auth.IDP.RoleMapping = tt.roleMapping
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -1209,8 +1212,8 @@ func TestConfig_ValidateAPIKeyConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.APIKey.APIKeysPerUserPerAPI = tt.keysPerUser
-			cfg.GatewayController.APIKey.Algorithm = tt.algorithm
+			cfg.Controller.APIKey.APIKeysPerUserPerAPI = tt.keysPerUser
+			cfg.Controller.APIKey.Algorithm = tt.algorithm
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -1239,7 +1242,7 @@ func TestConfig_ValidateHTTPListenerConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.HTTPListener.ServerHeaderTransformation = tt.serverHeaderTransformation
+			cfg.Router.HTTPListener.ServerHeaderTransformation = tt.serverHeaderTransformation
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -1254,40 +1257,40 @@ func TestConfig_ValidateHTTPListenerConfig(t *testing.T) {
 func TestConfig_HelperMethods(t *testing.T) {
 	t.Run("IsPersistentMode", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.GatewayController.Storage.Type = "sqlite"
+		cfg.Controller.Storage.Type = "sqlite"
 		assert.True(t, cfg.IsPersistentMode())
 
-		cfg.GatewayController.Storage.Type = "postgres"
+		cfg.Controller.Storage.Type = "postgres"
 		assert.True(t, cfg.IsPersistentMode())
 
-		cfg.GatewayController.Storage.Type = "memory"
+		cfg.Controller.Storage.Type = "memory"
 		assert.False(t, cfg.IsPersistentMode())
 	})
 
 	t.Run("IsMemoryOnlyMode", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.GatewayController.Storage.Type = "memory"
+		cfg.Controller.Storage.Type = "memory"
 		assert.True(t, cfg.IsMemoryOnlyMode())
 
-		cfg.GatewayController.Storage.Type = "sqlite"
+		cfg.Controller.Storage.Type = "sqlite"
 		assert.False(t, cfg.IsMemoryOnlyMode())
 	})
 
 	t.Run("IsAccessLogsEnabled", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.GatewayController.Router.AccessLogs.Enabled = true
+		cfg.Router.AccessLogs.Enabled = true
 		assert.True(t, cfg.IsAccessLogsEnabled())
 
-		cfg.GatewayController.Router.AccessLogs.Enabled = false
+		cfg.Router.AccessLogs.Enabled = false
 		assert.False(t, cfg.IsAccessLogsEnabled())
 	})
 
 	t.Run("IsPolicyEngineEnabled", func(t *testing.T) {
 		cfg := validConfig()
-		cfg.GatewayController.Router.PolicyEngine.Enabled = true
+		cfg.Router.PolicyEngine.Enabled = true
 		assert.True(t, cfg.IsPolicyEngineEnabled())
 
-		cfg.GatewayController.Router.PolicyEngine.Enabled = false
+		cfg.Router.PolicyEngine.Enabled = false
 		assert.False(t, cfg.IsPolicyEngineEnabled())
 	})
 }
@@ -1366,12 +1369,12 @@ func TestConfig_ValidateDownstreamTLSConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
-			cfg.GatewayController.Router.HTTPSEnabled = true
-			cfg.GatewayController.Router.HTTPSPort = 8443
-			cfg.GatewayController.Router.DownstreamTLS.CertPath = tt.certPath
-			cfg.GatewayController.Router.DownstreamTLS.KeyPath = tt.keyPath
-			cfg.GatewayController.Router.DownstreamTLS.MinimumProtocolVersion = tt.minVersion
-			cfg.GatewayController.Router.DownstreamTLS.MaximumProtocolVersion = tt.maxVersion
+			cfg.Router.HTTPSEnabled = true
+			cfg.Router.HTTPSPort = 8443
+			cfg.Router.DownstreamTLS.CertPath = tt.certPath
+			cfg.Router.DownstreamTLS.KeyPath = tt.keyPath
+			cfg.Router.DownstreamTLS.MinimumProtocolVersion = tt.minVersion
+			cfg.Router.DownstreamTLS.MaximumProtocolVersion = tt.maxVersion
 			err := cfg.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -1392,14 +1395,14 @@ func TestConfig_Validate_CompleteValidConfig(t *testing.T) {
 func TestDefaultConfig(t *testing.T) {
 	cfg := defaultConfig()
 	assert.NotNil(t, cfg)
-	assert.Equal(t, "sqlite", cfg.GatewayController.Storage.Type)
-	assert.Equal(t, "info", cfg.GatewayController.Logging.Level)
-	assert.Equal(t, uint32(5000), cfg.GatewayController.Router.Upstream.Timeouts.ConnectTimeoutInMs, "default router.upstream.timeouts.connect_timeout_in_ms should be 5s (5000 ms)")
+	assert.Equal(t, "sqlite", cfg.Controller.Storage.Type)
+	assert.Equal(t, "info", cfg.Controller.Logging.Level)
+	assert.Equal(t, uint32(5000), cfg.Router.Upstream.Timeouts.ConnectTimeoutMs, "default router.upstream.timeouts.connect_timeout_ms should be 5s (5000 ms)")
 }
 
 func TestConfig_CaseInsensitiveAlgorithm(t *testing.T) {
 	cfg := validConfig()
-	cfg.GatewayController.APIKey.Algorithm = strings.ToUpper(constants.HashingAlgorithmSHA256)
+	cfg.Controller.APIKey.Algorithm = strings.ToUpper(constants.HashingAlgorithmSHA256)
 	err := cfg.Validate()
 	assert.NoError(t, err, "Algorithm validation should be case insensitive")
 }

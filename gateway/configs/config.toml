@@ -9,16 +9,16 @@ enabled = true
 [analytics.publishers.settings]
 application_id = "<MOESIF_APPLICATION_ID>"
 
-[gateway_controller.router]
+[router]
 gateway_host = "*"
 
-[gateway_controller.router.access_logs]
+[router.access_logs]
 enabled = true
 
-[gateway_controller.auth.basic]
+[controller.auth.basic]
 enabled = true
 
-[[gateway_controller.auth.basic.users]]
+[[controller.auth.basic.users]]
 username = "admin"
 password = "admin"
 roles = ["admin"]

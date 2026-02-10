@@ -429,7 +429,7 @@ func (t *Translator) translateAsyncAPIConfig(cfg *models.StoredConfig, allConfig
 	mainRoutesList := make([]*route.Route, 0)
 
 	// Determine effective vhosts (fallback to global router defaults when not provided)
-	effectiveMainVHost := t.config.GatewayController.Router.VHosts.Main.Default
+	effectiveMainVHost := t.config.Router.VHosts.Main.Default
 	if apiData.Vhosts != nil {
 		if strings.TrimSpace(apiData.Vhosts.Main) != "" {
 			effectiveMainVHost = apiData.Vhosts.Main
@@ -493,8 +493,8 @@ func (t *Translator) translateAPIConfig(cfg *models.StoredConfig, allConfigs []*
 	mainRoutesList := make([]*route.Route, 0)
 
 	// Determine effective vhosts (fallback to global router defaults when not provided)
-	effectiveMainVHost := t.config.GatewayController.Router.VHosts.Main.Default
-	effectiveSandboxVHost := t.config.GatewayController.Router.VHosts.Sandbox.Default
+	effectiveMainVHost := t.config.Router.VHosts.Main.Default
+	effectiveSandboxVHost := t.config.Router.VHosts.Sandbox.Default
 	if apiData.Vhosts != nil {
 		if strings.TrimSpace(apiData.Vhosts.Main) != "" {
 			effectiveMainVHost = apiData.Vhosts.Main
@@ -1393,10 +1393,10 @@ func (t *Translator) createRoute(apiId, apiName, apiVersion, context, method, pa
 	routeAction := &route.Route_Route{
 		Route: &route.RouteAction{
 			Timeout: durationpb.New(
-				time.Duration(t.routerConfig.Upstream.Timeouts.RouteTimeoutInMs) * time.Millisecond,
+				time.Duration(t.routerConfig.Upstream.Timeouts.RouteTimeoutMs) * time.Millisecond,
 			),
 			IdleTimeout: durationpb.New(
-				time.Duration(t.routerConfig.Upstream.Timeouts.RouteIdleTimeoutInMs) * time.Millisecond,
+				time.Duration(t.routerConfig.Upstream.Timeouts.RouteIdleTimeoutMs) * time.Millisecond,
 			),
 			ClusterSpecifier: &route.RouteAction_Cluster{
 				Cluster: clusterName,
@@ -1580,7 +1580,7 @@ func (t *Translator) createCluster(
 	if connectTimeout != nil {
 		effectiveConnectTimeout = *connectTimeout
 	} else {
-		effectiveConnectTimeout = time.Duration(t.routerConfig.Upstream.Timeouts.ConnectTimeoutInMs) * time.Millisecond
+		effectiveConnectTimeout = time.Duration(t.routerConfig.Upstream.Timeouts.ConnectTimeoutMs) * time.Millisecond
 		if effectiveConnectTimeout == 0 {
 			effectiveConnectTimeout = 5 * time.Second
 		}
@@ -1889,7 +1889,7 @@ func (t *Translator) createSDSCluster() *cluster.Cluster {
 		xdsHost = envHost
 	}
 
-	xdsPort := t.config.GatewayController.Server.XDSPort
+	xdsPort := t.config.Controller.Server.XDSPort
 	if xdsPort == 0 {
 		xdsPort = 18000 // Default xDS port
 	}
@@ -2414,7 +2414,7 @@ func (t *Translator) createTracingConfig() (*hcm.HttpConnectionManager_Tracing, 
 	}
 
 	// Determine service name with fallback
-	serviceName := t.config.GatewayController.Router.TracingServiceName
+	serviceName := t.config.Router.TracingServiceName
 	if serviceName == "" {
 		serviceName = "envoy-gateway"
 	}

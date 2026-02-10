@@ -353,9 +353,9 @@ func testRouterConfig() *config.RouterConfig {
 				DisableSslVerification: true,
 			},
 			Timeouts: config.UpstreamTimeouts{
-				RouteTimeoutInMs:     60000,
-				RouteIdleTimeoutInMs: 300000,
-				ConnectTimeoutInMs:  5000,
+				RouteTimeoutMs:     60000,
+				RouteIdleTimeoutMs: 300000,
+				ConnectTimeoutMs:  5000,
 			},
 		},
 		PolicyEngine: config.PolicyEngineConfig{
@@ -373,8 +373,7 @@ func testRouterConfig() *config.RouterConfig {
 // testConfig creates a minimal valid config for testing
 func testConfig() *config.Config {
 	return &config.Config{
-		GatewayController: config.GatewayController{
-			Router: *testRouterConfig(),
+		Controller: config.Controller{
 			ControlPlane: config.ControlPlaneConfig{
 				Host:             "localhost",
 				ReconnectInitial: time.Second,
@@ -382,6 +381,7 @@ func testConfig() *config.Config {
 				PollingInterval:  5 * time.Second,
 			},
 		},
+		Router: *testRouterConfig(),
 	}
 }
 
@@ -742,7 +742,7 @@ func TestTranslator_CreateAccessLogConfig_JSON(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.GatewayController.Router = *routerCfg
+	cfg.Router = *routerCfg
 	translator := NewTranslator(logger, routerCfg, nil, cfg)
 
 	logs, err := translator.createAccessLogConfig()
@@ -759,7 +759,7 @@ func TestTranslator_CreateAccessLogConfig_Text(t *testing.T) {
 		TextFormat: "[%START_TIME%] %REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL% %RESPONSE_CODE%",
 	}
 	cfg := testConfig()
-	cfg.GatewayController.Router = *routerCfg
+	cfg.Router = *routerCfg
 	translator := NewTranslator(logger, routerCfg, nil, cfg)
 
 	logs, err := translator.createAccessLogConfig()
@@ -776,7 +776,7 @@ func TestTranslator_CreateAccessLogConfig_JSONMissingFields(t *testing.T) {
 		JSONFields: nil,
 	}
 	cfg := testConfig()
-	cfg.GatewayController.Router = *routerCfg
+	cfg.Router = *routerCfg
 	translator := NewTranslator(logger, routerCfg, nil, cfg)
 
 	logs, err := translator.createAccessLogConfig()
@@ -798,7 +798,7 @@ func TestTranslator_CreatePolicyEngineCluster(t *testing.T) {
 		},
 	}
 	cfg := testConfig()
-	cfg.GatewayController.Router = *routerCfg
+	cfg.Router = *routerCfg
 	translator := NewTranslator(logger, routerCfg, nil, cfg)
 
 	cluster := translator.createPolicyEngineCluster()
@@ -820,7 +820,7 @@ func TestTranslator_CreatePolicyEngineCluster_UDS(t *testing.T) {
 			RequestHeaderMode: "DEFAULT",
 		}
 		cfg := testConfig()
-		cfg.GatewayController.Router = *routerCfg
+		cfg.Router = *routerCfg
 		translator := NewTranslator(logger, routerCfg, nil, cfg)
 
 		c := translator.createPolicyEngineCluster()
@@ -851,7 +851,7 @@ func TestTranslator_CreatePolicyEngineCluster_UDS(t *testing.T) {
 			RequestHeaderMode: "DEFAULT",
 		}
 		cfg := testConfig()
-		cfg.GatewayController.Router = *routerCfg
+		cfg.Router = *routerCfg
 		translator := NewTranslator(logger, routerCfg, nil, cfg)
 
 		c := translator.createPolicyEngineCluster()
@@ -897,7 +897,7 @@ func TestTranslator_CreateExtProcFilter(t *testing.T) {
 				RequestHeaderMode: tt.headerMode,
 			}
 			cfg := testConfig()
-			cfg.GatewayController.Router = *routerCfg
+			cfg.Router = *routerCfg
 			translator := NewTranslator(logger, routerCfg, nil, cfg)
 
 			filter, err := translator.createExtProcFilter()
@@ -993,7 +993,7 @@ func TestTranslator_CreateTracingConfig_Enabled(t *testing.T) {
 	cfg.TracingConfig.Enabled = true
 	cfg.TracingConfig.Endpoint = "otel-collector:4317"
 	cfg.TracingConfig.SamplingRate = 0.5
-	cfg.GatewayController.Router.TracingServiceName = "test-service"
+	cfg.Router.TracingServiceName = "test-service"
 	translator := NewTranslator(logger, routerCfg, nil, cfg)
 
 	tracingCfg, err := translator.createTracingConfig()
@@ -1267,7 +1267,7 @@ func TestTranslator_CreateListener_HTTP(t *testing.T) {
 	routerCfg := testRouterConfig()
 	routerCfg.ListenerPort = 8080
 	cfg := testConfig()
-	cfg.GatewayController.Router = *routerCfg
+	cfg.Router = *routerCfg
 	translator := NewTranslator(logger, routerCfg, nil, cfg)
 
 	listener, routeConfig, err := translator.createListener(nil, false)

@@ -85,7 +85,7 @@ func TestValidateAPIKeyConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a minimal config with API key hashing settings
 			config := &Config{
-				GatewayController: GatewayController{
+				Controller: Controller{
 					APIKey: APIKeyConfig{
 						APIKeysPerUserPerAPI: tt.apiKeysPerUserPerAPI,
 						Algorithm:            tt.algorithm,

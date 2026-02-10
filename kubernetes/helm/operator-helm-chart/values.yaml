@@ -88,7 +88,7 @@ gateway:
       # Shared configuration for gateway-controller and policy-engine
       # This config is mounted to both components as /configs/config.yaml
       config:
-        gateway_controller:
+        controller:
           auth:
             basic:
               enabled: true

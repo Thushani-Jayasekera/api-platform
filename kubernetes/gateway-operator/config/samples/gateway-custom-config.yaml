@@ -28,7 +28,7 @@ data:
       # Shared configuration for gateway-controller and policy-engine
       # This config is mounted to both components as /configs/config.yaml
       config:
-        gateway_controller:
+        controller:
           auth:
             basic:
               enabled: true
@@ -49,7 +49,7 @@ data:
             shutdown_timeout: 15s
 
           # Policy xDS Server configuration
-          policyserver:
+          policy_server:
             # Enable or disable the policy xDS server
             enabled: true
 
@@ -162,9 +162,9 @@ data:
 
               # Timeout configurations for upstream (milliseconds)
               timeouts:
-                route_timeout_in_ms: 60000
-                route_idle_timeout_in_ms: 300000
-                connect_timeout_in_ms: 5000
+                route_timeout_ms: 60000
+                route_idle_timeout_ms: 300000
+                connect_timeout_ms: 5000
 
             # Policy Engine ext_proc filter configuration
             policy_engine:
