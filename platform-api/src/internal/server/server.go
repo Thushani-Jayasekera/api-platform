@@ -78,13 +78,13 @@ func StartPlatformAPIServer(cfg *config.Server) (*Server, error) {
 	projectRepo := repository.NewProjectRepo(db)
 	apiRepo := repository.NewAPIRepo(db)
 	gatewayRepo := repository.NewGatewayRepo(db)
+	artifactRepo := repository.NewArtifactRepo(db)
 	devPortalRepo := repository.NewDevPortalRepository(db)
 	publicationRepo := repository.NewAPIPublicationRepository(db)
+	deploymentRepo := repository.NewDeploymentRepo(db)
 	llmTemplateRepo := repository.NewLLMProviderTemplateRepo(db)
 	llmProviderRepo := repository.NewLLMProviderRepo(db)
 	llmProxyRepo := repository.NewLLMProxyRepo(db)
-	deploymentRepo := repository.NewDeploymentRepo(db)
-	artifactRepo := repository.NewArtifactRepo(db)
 
 	// Seed default LLM provider templates into the DB (per organization)
 	cfg.LLMTemplateDefinitionsPath = strings.TrimSpace(cfg.LLMTemplateDefinitionsPath)
@@ -155,13 +155,22 @@ func StartPlatformAPIServer(cfg *config.Server) (*Server, error) {
 	apiService := service.NewAPIService(apiRepo, projectRepo, orgRepo, gatewayRepo, devPortalRepo, publicationRepo,
 		gatewayEventsService, devPortalService, apiUtil)
 	gatewayService := service.NewGatewayService(gatewayRepo, orgRepo, apiRepo)
-	internalGatewayService := service.NewGatewayInternalAPIService(apiRepo, deploymentRepo, gatewayRepo, orgRepo, projectRepo, cfg)
+	internalGatewayService := service.NewGatewayInternalAPIService(apiRepo, llmProviderRepo, deploymentRepo, gatewayRepo, orgRepo, projectRepo, cfg)
 	apiKeyService := service.NewAPIKeyService(apiRepo, gatewayEventsService)
 	gitService := service.NewGitService()
 	deploymentService := service.NewDeploymentService(apiRepo, artifactRepo, deploymentRepo, gatewayRepo, orgRepo, gatewayEventsService, apiUtil, cfg)
 	llmTemplateService := service.NewLLMProviderTemplateService(llmTemplateRepo)
 	llmProviderService := service.NewLLMProviderService(llmProviderRepo, llmTemplateRepo, orgRepo, llmTemplateSeeder)
 	llmProxyService := service.NewLLMProxyService(llmProxyRepo, llmProviderRepo, projectRepo)
+	llmProviderDeploymentService := service.NewLLMProviderDeploymentService(
+		llmProviderRepo,
+		llmTemplateRepo,
+		deploymentRepo,
+		gatewayRepo,
+		orgRepo,
+		gatewayEventsService,
+		cfg,
+	)
 
 	// Initialize handlers
 	orgHandler := handler.NewOrganizationHandler(orgService)
@@ -175,6 +184,7 @@ func StartPlatformAPIServer(cfg *config.Server) (*Server, error) {
 	gitHandler := handler.NewGitHandler(gitService)
 	deploymentHandler := handler.NewDeploymentHandler(deploymentService)
 	llmHandler := handler.NewLLMHandler(llmTemplateService, llmProviderService, llmProxyService)
+	llmDeploymentHandler := handler.NewLLMProviderDeploymentHandler(llmProviderDeploymentService)
 
 	// Setup router
 	router := gin.Default()
@@ -208,6 +218,7 @@ func StartPlatformAPIServer(cfg *config.Server) (*Server, error) {
 	gitHandler.RegisterRoutes(router)
 	deploymentHandler.RegisterRoutes(router)
 	llmHandler.RegisterRoutes(router)
+	llmDeploymentHandler.RegisterRoutes(router)
 
 	log.Printf("[INFO] WebSocket manager initialized: maxConnections=%d heartbeatTimeout=%ds rateLimitPerMin=%d",
 		cfg.WebSocket.MaxConnections, cfg.WebSocket.ConnectionTimeout, cfg.WebSocket.RateLimitPerMin)
