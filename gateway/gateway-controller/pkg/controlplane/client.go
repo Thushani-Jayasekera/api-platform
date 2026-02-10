@@ -88,7 +88,7 @@ type ConnectionState struct {
 // ControlPlaneClient interface defines the methods needed from the control plane client
 type ControlPlaneClient interface {
 	IsConnected() bool
-	NotifyAPIDeployment(apiID string, apiConfig *models.StoredConfig, revisionID string) error
+	NotifyAPIDeployment(apiID string, apiConfig *models.StoredConfig, deploymentID string) error
 }
 
 // Client manages the WebSocket connection to the control plane
@@ -590,7 +590,7 @@ func (c *Client) handleAPIDeployedEvent(event map[string]interface{}) {
 	c.logger.Info("Processing API deployment",
 		slog.String("api_id", apiID),
 		slog.String("environment", deployedEvent.Payload.Environment),
-		slog.String("revision_id", deployedEvent.Payload.RevisionID),
+		slog.String("deployment_id", deployedEvent.Payload.DeploymentID),
 		slog.String("vhost", deployedEvent.Payload.VHost),
 		slog.String("correlation_id", deployedEvent.CorrelationID),
 	)
@@ -685,7 +685,114 @@ func (c *Client) handleAPIUndeployedEvent(event map[string]interface{}) {
 		slog.Any("timestamp", event["timestamp"]),
 		slog.Any("correlationId", event["correlationId"]),
 	)
-	// TODO: Implement actual API undeployment logic in Phase 6
+
+	// Parse the event into structured format
+	eventBytes, err := json.Marshal(event)
+	if err != nil {
+		c.logger.Error("Failed to marshal event for parsing",
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	var undeployedEvent APIUndeployedEvent
+	if err := json.Unmarshal(eventBytes, &undeployedEvent); err != nil {
+		c.logger.Error("Failed to parse API undeployment event",
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	// Extract API ID
+	apiID := undeployedEvent.Payload.APIID
+	if apiID == "" {
+		c.logger.Error("API ID is empty in undeployment event")
+		return
+	}
+
+	c.logger.Info("Processing API undeployment",
+		slog.String("api_id", apiID),
+		slog.String("environment", undeployedEvent.Payload.Environment),
+		slog.String("vhost", undeployedEvent.Payload.VHost),
+		slog.String("correlation_id", undeployedEvent.CorrelationID),
+	)
+
+	// Check if config exists in database first (source of truth when persistent storage is available)
+	var apiConfig *models.StoredConfig
+	if c.db != nil {
+		var err error
+		apiConfig, err = c.db.GetConfig(apiID)
+		if err != nil {
+			c.logger.Warn("API configuration not found in database for undeployment",
+				slog.String("api_id", apiID),
+				slog.Any("error", err),
+			)
+			// Not an error - the API might already be undeployed or deleted
+			return
+		}
+	} else {
+		// Fall back to in-memory store if database is not available
+		var err error
+		apiConfig, err = c.store.Get(apiID)
+		if err != nil {
+			c.logger.Warn("API configuration not found in storage for undeployment",
+				slog.String("api_id", apiID),
+				slog.Any("error", err),
+			)
+			// Not an error - the API might already be undeployed or deleted
+			return
+		}
+	}
+
+	// Set status to undeployed (preserve config, keys, and policies)
+	apiConfig.Status = models.StatusUndeployed
+	apiConfig.UpdatedAt = time.Now()
+	// Keep DeployedVersion as-is - it tracks when it was last deployed
+
+	// Update database (only if persistent mode)
+	if c.db != nil {
+		if err := c.db.UpdateConfig(apiConfig); err != nil {
+			c.logger.Error("Failed to update config status in database",
+				slog.String("api_id", apiID),
+				slog.Any("error", err),
+			)
+			return
+		}
+	}
+
+	// Update in-memory store
+	if err := c.store.Update(apiConfig); err != nil {
+		c.logger.Error("Failed to update config status in memory store",
+			slog.String("api_id", apiID),
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	// Note: We keep API keys and policies for potential redeploy
+	// They will be reused if the API is redeployed
+
+	// Update xDS snapshot asynchronously (undeployed APIs will be filtered out)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if err := c.snapshotManager.UpdateSnapshot(ctx, undeployedEvent.CorrelationID); err != nil {
+			c.logger.Error("Failed to update xDS snapshot after API undeployment",
+				slog.String("api_id", apiID),
+				slog.Any("error", err),
+			)
+		} else {
+			c.logger.Info("Successfully updated xDS snapshot after API undeployment",
+				slog.String("api_id", apiID),
+			)
+		}
+	}()
+
+	c.logger.Info("Successfully processed API undeployment event",
+		slog.String("api_id", apiID),
+		slog.String("correlation_id", undeployedEvent.CorrelationID),
+	)
 }
 
 // handleAPIKeyCreatedEvent handles API key created events from platform-api
@@ -1119,7 +1226,7 @@ func (c *Client) IsConnected() bool {
 }
 
 // NotifyAPIDeployment sends a REST API call to platform-api when an API is deployed successfully
-func (c *Client) NotifyAPIDeployment(apiID string, apiConfig *models.StoredConfig, revisionID string) error {
+func (c *Client) NotifyAPIDeployment(apiID string, apiConfig *models.StoredConfig, deploymentID string) error {
 	// Check if connected to control plane
 	if !c.IsConnected() {
 		c.logger.Debug("Not connected to control plane, skipping API deployment notification",
@@ -1128,7 +1235,7 @@ func (c *Client) NotifyAPIDeployment(apiID string, apiConfig *models.StoredConfi
 	}
 
 	// Use the api utils service to send the deployment notification
-	return c.apiUtilsService.NotifyAPIDeployment(apiID, apiConfig, revisionID)
+	return c.apiUtilsService.NotifyAPIDeployment(apiID, apiConfig, deploymentID)
 }
 
 // getWebSocketURL constructs the base WebSocket URL from configuration

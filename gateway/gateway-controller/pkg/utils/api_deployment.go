@@ -146,14 +146,35 @@ func (s *APIDeploymentService) DeployAPIConfiguration(params APIDeploymentParams
 
 	handle := apiConfig.Metadata.Name
 
+	// Determine if this is an update or create by checking if config with apiID already exists
+	var existingConfig *models.StoredConfig
+	var isUpdate bool
+
+	// Check for conflicts with other configurations
+	// For updates: only error if name/version/handle belong to a different config ID
+	// For creates: any conflict is an error
 	if s.store != nil {
-		if _, err := s.store.GetByNameVersion(apiName, apiVersion); err == nil {
-			return nil, fmt.Errorf("%w: configuration with name '%s' and version '%s' already exists", storage.ErrConflict, apiName, apiVersion)
+		existingConfig, _ = s.store.Get(apiID)
+		isUpdate = existingConfig != nil
+
+		// Check name+version conflict
+		if conflicting, err := s.store.GetByNameVersion(apiName, apiVersion); err == nil {
+			// For updates: only error if the conflict is with a different API
+			// For creates: any conflict is an error
+			if !isUpdate || conflicting.ID != apiID {
+				return nil, fmt.Errorf("%w: configuration with name '%s' and version '%s' already exists", storage.ErrConflict, apiName, apiVersion)
+			}
 		}
+
+		// Check handle conflict
 		if handle != "" {
 			for _, c := range s.store.GetAll() {
 				if c.GetHandle() == handle {
-					return nil, fmt.Errorf("%w: configuration with handle '%s' already exists", storage.ErrConflict, handle)
+					// For updates: only error if the conflict is with a different API
+					// For creates: any conflict is an error
+					if !isUpdate || c.ID != apiID {
+						return nil, fmt.Errorf("%w: configuration with handle '%s' already exists", storage.ErrConflict, handle)
+					}
 				}
 			}
 		}
@@ -263,7 +284,7 @@ func (s *APIDeploymentService) DeployAPIConfiguration(params APIDeploymentParams
 	}
 
 	// Try to save/update the configuration
-	isUpdate, err := s.saveOrUpdateConfig(storedCfg, params.Logger)
+	isUpdate, err = s.saveOrUpdateConfig(storedCfg, params.Logger)
 	if err != nil {
 		return nil, err
 	}

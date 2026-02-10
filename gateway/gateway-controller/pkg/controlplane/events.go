@@ -29,10 +29,10 @@ type ConnectionAckMessage struct {
 
 // APIDeployedEventPayload represents the payload of an API deployment event
 type APIDeployedEventPayload struct {
-	APIID       string `json:"apiId"`
-	Environment string `json:"environment"`
-	RevisionID  string `json:"revisionId"`
-	VHost       string `json:"vhost"`
+	APIID        string `json:"apiId"`
+	Environment  string `json:"environment"`
+	DeploymentID string `json:"deploymentId"`
+	VHost        string `json:"vhost"`
 }
 
 // APIDeployedEvent represents the complete API deployment event
@@ -41,6 +41,21 @@ type APIDeployedEvent struct {
 	Payload       APIDeployedEventPayload `json:"payload"`
 	Timestamp     string                  `json:"timestamp"`
 	CorrelationID string                  `json:"correlationId"`
+}
+
+// APIUndeployedEventPayload represents the payload of an API undeployment event
+type APIUndeployedEventPayload struct {
+	APIID       string `json:"apiId"`
+	Environment string `json:"environment"`
+	VHost       string `json:"vhost"`
+}
+
+// APIUndeployedEvent represents the complete API undeployment event
+type APIUndeployedEvent struct {
+	Type          string                    `json:"type"`
+	Payload       APIUndeployedEventPayload `json:"payload"`
+	Timestamp     string                    `json:"timestamp"`
+	CorrelationID string                    `json:"correlationId"`
 }
 
 // APIKeyCreatedEventPayload represents the payload of an API key created event.

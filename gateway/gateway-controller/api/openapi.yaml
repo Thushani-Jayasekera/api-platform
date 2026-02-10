@@ -2569,6 +2569,7 @@ components:
             - pending
             - deployed
             - failed
+            - undeployed
           example: deployed
         created_at:
           type: string
@@ -3636,6 +3637,7 @@ components:
             - pending
             - deployed
             - failed
+            - undeployed
           example: deployed
         created_at:
           type: string

@@ -120,9 +120,9 @@ func (s *GatewayInternalAPIService) GetActiveDeploymentByGateway(apiID, orgID, g
 
 // CreateGatewayDeployment handles the registration of an API deployment from a gateway
 func (s *GatewayInternalAPIService) CreateGatewayDeployment(apiHandle, orgID, gatewayID string,
-	notification dto.DeploymentNotification, revisionID *string) (*dto.GatewayDeploymentResponse, error) {
-	// Note: revisionID parameter is reserved for future use
-	_ = revisionID
+	notification dto.DeploymentNotification, deploymentID *string) (*dto.GatewayDeploymentResponse, error) {
+	// Note: deploymentID parameter is reserved for future use
+	_ = deploymentID
 
 	// Validate input
 	if apiHandle == "" || orgID == "" || gatewayID == "" {
@@ -213,13 +213,13 @@ func (s *GatewayInternalAPIService) CreateGatewayDeployment(apiHandle, orgID, ga
 	}
 
 	// Check if deployment already exists
-	deploymentID, status, _, err := s.deploymentRepo.GetStatus(apiUUID, orgID, gatewayID)
+	existingDeploymentID, status, _, err := s.deploymentRepo.GetStatus(apiUUID, orgID, gatewayID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check deployment status of gateway: %w", err)
 	}
 
 	// Check if this gateway already has this API deployed or undeployed
-	if deploymentID != "" && (status == model.DeploymentStatusDeployed || status == model.DeploymentStatusUndeployed) {
+	if existingDeploymentID != "" && (status == model.DeploymentStatusDeployed || status == model.DeploymentStatusUndeployed) {
 		switch status {
 		case model.DeploymentStatusDeployed:
 			// An active deployment already exists for this API-gateway combination

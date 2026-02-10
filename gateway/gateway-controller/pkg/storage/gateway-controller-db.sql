@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS deployments (
     handle TEXT NOT NULL UNIQUE,        -- API handle (e.g., petstore-v1.0)
 
     -- Deployment status
-    status TEXT NOT NULL CHECK(status IN ('pending', 'deployed', 'failed')),
+    status TEXT NOT NULL CHECK(status IN ('pending', 'deployed', 'failed', 'undeployed')),
 
     -- Timestamps
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -166,5 +166,5 @@ CREATE INDEX IF NOT EXISTS idx_api_key_source ON api_keys(source);
 CREATE INDEX IF NOT EXISTS idx_api_key_external_ref ON api_keys(external_ref_id);
 CREATE INDEX IF NOT EXISTS idx_api_key_index_key ON api_keys(index_key);
 
--- Set schema version to 6 (api_keys with external ref, index_key, display_name)
-PRAGMA user_version = 6;
+-- Set schema version to 7 (deployments status CHECK constraint includes 'undeployed')
+PRAGMA user_version = 7;
