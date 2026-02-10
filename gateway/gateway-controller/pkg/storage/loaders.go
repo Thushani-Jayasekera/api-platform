@@ -18,7 +18,15 @@
 
 package storage
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
+)
+
+type apiKeyStoreWriter interface {
+	Store(*models.APIKey) error
+}
 
 // LoadFromDatabase loads all configurations from database into the in-memory cache.
 func LoadFromDatabase(storage Storage, cache *ConfigStore) error {
@@ -52,8 +60,8 @@ func LoadLLMProviderTemplatesFromDatabase(storage Storage, cache *ConfigStore) e
 	return nil
 }
 
-// LoadAPIKeysFromDatabase loads all API keys from database into both the ConfigStore and APIKeyStore.
-func LoadAPIKeysFromDatabase(storage Storage, configStore *ConfigStore, apiKeyStore *APIKeyStore) error {
+// LoadAPIKeysFromDatabase loads active API keys from database into both the ConfigStore and APIKeyStore.
+func LoadAPIKeysFromDatabase(storage Storage, configStore *ConfigStore, apiKeyStore apiKeyStoreWriter) error {
 	apiKeys, err := storage.GetAllAPIKeys()
 	if err != nil {
 		return fmt.Errorf("failed to load API keys from database: %w", err)
@@ -64,10 +72,24 @@ func LoadAPIKeysFromDatabase(storage Storage, configStore *ConfigStore, apiKeySt
 			return fmt.Errorf("failed to load API key %s into ConfigStore: %w", apiKey.ID, err)
 		}
 
-		if err := apiKeyStore.Store(apiKey); err != nil {
-			return fmt.Errorf("failed to load API key %s into APIKeyStore: %w", apiKey.ID, err)
+		if err := storeAPIKeySafely(apiKeyStore, apiKey); err != nil {
+			rollbackErr := configStore.RemoveAPIKeyByID(apiKey.APIId, apiKey.ID)
+			if rollbackErr != nil {
+				return fmt.Errorf("failed to load API key %s into APIKeyStore: %w; failed to rollback ConfigStore entry: %v", apiKey.ID, err, rollbackErr)
+			}
+			return fmt.Errorf("failed to load API key %s into APIKeyStore: %w (rolled back ConfigStore entry)", apiKey.ID, err)
 		}
 	}
 
 	return nil
+}
+
+func storeAPIKeySafely(apiKeyStore apiKeyStoreWriter, apiKey *models.APIKey) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic in apiKeyStore.Store for API key %s: %v", apiKey.ID, r)
+		}
+	}()
+
+	return apiKeyStore.Store(apiKey)
 }

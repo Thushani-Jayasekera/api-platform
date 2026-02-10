@@ -132,7 +132,18 @@ func (s *sqlStore) SaveConfig(cfg *models.StoredConfig) error {
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	stmt, err := s.prepare(query)
+	tx, err := s.begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	stmt, err := tx.tx.Prepare(s.bind(query))
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
@@ -160,10 +171,15 @@ func (s *sqlStore) SaveConfig(cfg *models.StoredConfig) error {
 		return fmt.Errorf("failed to insert configuration: %w", err)
 	}
 
-	_, err = s.addDeploymentConfigs(cfg)
+	_, err = s.addDeploymentConfigsTx(tx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to add deployment configurations: %w", err)
 	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit configuration transaction: %w", err)
+	}
+	committed = true
 
 	s.logger.Info("Configuration saved",
 		slog.String("id", cfg.ID),
@@ -211,7 +227,20 @@ func (s *sqlStore) UpdateConfig(cfg *models.StoredConfig) error {
 		WHERE id = ?
 	`
 
-	stmt, err := s.prepare(query)
+	tx, err := s.begin()
+	if err != nil {
+		metrics.DatabaseOperationsTotal.WithLabelValues("update", table, "error").Inc()
+		metrics.StorageErrorsTotal.WithLabelValues("update", "tx_begin_error").Inc()
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	stmt, err := tx.tx.Prepare(s.bind(query))
 	if err != nil {
 		metrics.DatabaseOperationsTotal.WithLabelValues("update", table, "error").Inc()
 		metrics.StorageErrorsTotal.WithLabelValues("update", "prepare_error").Inc()
@@ -250,12 +279,19 @@ func (s *sqlStore) UpdateConfig(cfg *models.StoredConfig) error {
 		return fmt.Errorf("%w: id=%s", ErrNotFound, cfg.ID)
 	}
 
-	_, err = s.updateDeploymentConfigs(cfg)
+	_, err = s.updateDeploymentConfigsTx(tx, cfg)
 	if err != nil {
 		metrics.DatabaseOperationsTotal.WithLabelValues("update", table, "error").Inc()
 		metrics.StorageErrorsTotal.WithLabelValues("update", "deployment_config_error").Inc()
 		return fmt.Errorf("failed to update deployment configurations: %w", err)
 	}
+
+	if err := tx.Commit(); err != nil {
+		metrics.DatabaseOperationsTotal.WithLabelValues("update", table, "error").Inc()
+		metrics.StorageErrorsTotal.WithLabelValues("update", "commit_error").Inc()
+		return fmt.Errorf("failed to commit configuration transaction: %w", err)
+	}
+	committed = true
 
 	// Record successful metrics
 	metrics.DatabaseOperationsTotal.WithLabelValues("update", table, "success").Inc()
@@ -317,8 +353,8 @@ func (s *sqlStore) GetConfig(id string) (*models.StoredConfig, error) {
 	`
 
 	var cfg models.StoredConfig
-	var configJSON string
-	var sourceConfigJSON string
+	var configJSON sql.NullString
+	var sourceConfigJSON sql.NullString
 	var deployedAt sql.NullTime
 
 	err := s.queryRow(query, id).Scan(
@@ -350,15 +386,15 @@ func (s *sqlStore) GetConfig(id string) (*models.StoredConfig, error) {
 	}
 
 	// Deserialize JSON configuration
-	if configJSON != "" {
-		if err := json.Unmarshal([]byte(configJSON), &cfg.Configuration); err != nil {
+	if configJSON.Valid && configJSON.String != "" {
+		if err := json.Unmarshal([]byte(configJSON.String), &cfg.Configuration); err != nil {
 			metrics.DatabaseOperationsTotal.WithLabelValues("read", table, "error").Inc()
 			metrics.StorageErrorsTotal.WithLabelValues("read", "unmarshal_error").Inc()
 			return nil, fmt.Errorf("failed to unmarshal configuration: %w", err)
 		}
 	}
-	if sourceConfigJSON != "" {
-		if err := json.Unmarshal([]byte(sourceConfigJSON), &cfg.SourceConfiguration); err != nil {
+	if sourceConfigJSON.Valid && sourceConfigJSON.String != "" {
+		if err := json.Unmarshal([]byte(sourceConfigJSON.String), &cfg.SourceConfiguration); err != nil {
 			metrics.DatabaseOperationsTotal.WithLabelValues("read", table, "error").Inc()
 			metrics.StorageErrorsTotal.WithLabelValues("read", "unmarshal_error").Inc()
 			return nil, fmt.Errorf("failed to unmarshal source configuration: %w", err)
@@ -383,8 +419,8 @@ func (s *sqlStore) GetConfigByNameVersion(name, version string) (*models.StoredC
 	`
 
 	var cfg models.StoredConfig
-	var configJSON string
-	var sourceConfigJSON string
+	var configJSON sql.NullString
+	var sourceConfigJSON sql.NullString
 	var deployedAt sql.NullTime
 
 	err := s.queryRow(query, name, version).Scan(
@@ -412,13 +448,13 @@ func (s *sqlStore) GetConfigByNameVersion(name, version string) (*models.StoredC
 	}
 
 	// Deserialize JSON configuration
-	if configJSON != "" {
-		if err := json.Unmarshal([]byte(configJSON), &cfg.Configuration); err != nil {
+	if configJSON.Valid && configJSON.String != "" {
+		if err := json.Unmarshal([]byte(configJSON.String), &cfg.Configuration); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal configuration: %w", err)
 		}
 	}
-	if sourceConfigJSON != "" {
-		if err := json.Unmarshal([]byte(sourceConfigJSON), &cfg.SourceConfiguration); err != nil {
+	if sourceConfigJSON.Valid && sourceConfigJSON.String != "" {
+		if err := json.Unmarshal([]byte(sourceConfigJSON.String), &cfg.SourceConfiguration); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal source configuration: %w", err)
 		}
 	}
@@ -437,8 +473,8 @@ func (s *sqlStore) GetConfigByHandle(handle string) (*models.StoredConfig, error
 	`
 
 	var cfg models.StoredConfig
-	var configJSON string
-	var sourceConfigJSON string
+	var configJSON sql.NullString
+	var sourceConfigJSON sql.NullString
 	var deployedAt sql.NullTime
 
 	err := s.queryRow(query, handle).Scan(
@@ -466,13 +502,13 @@ func (s *sqlStore) GetConfigByHandle(handle string) (*models.StoredConfig, error
 	}
 
 	// Deserialize JSON configuration
-	if configJSON != "" {
-		if err := json.Unmarshal([]byte(configJSON), &cfg.Configuration); err != nil {
+	if configJSON.Valid && configJSON.String != "" {
+		if err := json.Unmarshal([]byte(configJSON.String), &cfg.Configuration); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal configuration: %w", err)
 		}
 	}
-	if sourceConfigJSON != "" {
-		if err := json.Unmarshal([]byte(sourceConfigJSON), &cfg.SourceConfiguration); err != nil {
+	if sourceConfigJSON.Valid && sourceConfigJSON.String != "" {
+		if err := json.Unmarshal([]byte(sourceConfigJSON.String), &cfg.SourceConfiguration); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal source configuration: %w", err)
 		}
 	}
@@ -500,8 +536,8 @@ func (s *sqlStore) GetAllConfigs() ([]*models.StoredConfig, error) {
 
 	for rows.Next() {
 		var cfg models.StoredConfig
-		var configJSON string
-		var sourceConfigJSON string
+		var configJSON sql.NullString
+		var sourceConfigJSON sql.NullString
 		var deployedAt sql.NullTime
 
 		err := rows.Scan(
@@ -526,13 +562,13 @@ func (s *sqlStore) GetAllConfigs() ([]*models.StoredConfig, error) {
 		}
 
 		// Deserialize JSON configuration
-		if configJSON != "" {
-			if err := json.Unmarshal([]byte(configJSON), &cfg.Configuration); err != nil {
+		if configJSON.Valid && configJSON.String != "" {
+			if err := json.Unmarshal([]byte(configJSON.String), &cfg.Configuration); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal configuration: %w", err)
 			}
 		}
-		if sourceConfigJSON != "" {
-			if err := json.Unmarshal([]byte(sourceConfigJSON), &cfg.SourceConfiguration); err != nil {
+		if sourceConfigJSON.Valid && sourceConfigJSON.String != "" {
+			if err := json.Unmarshal([]byte(sourceConfigJSON.String), &cfg.SourceConfiguration); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal source configuration: %w", err)
 			}
 		}
@@ -568,8 +604,8 @@ func (s *sqlStore) GetAllConfigsByKind(kind string) ([]*models.StoredConfig, err
 
 	for rows.Next() {
 		var cfg models.StoredConfig
-		var configJSON string
-		var sourceConfigJSON string
+		var configJSON sql.NullString
+		var sourceConfigJSON sql.NullString
 		var deployedAt sql.NullTime
 
 		err := rows.Scan(
@@ -594,13 +630,13 @@ func (s *sqlStore) GetAllConfigsByKind(kind string) ([]*models.StoredConfig, err
 		}
 
 		// Deserialize JSON configuration
-		if configJSON != "" {
-			if err := json.Unmarshal([]byte(configJSON), &cfg.Configuration); err != nil {
+		if configJSON.Valid && configJSON.String != "" {
+			if err := json.Unmarshal([]byte(configJSON.String), &cfg.Configuration); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal configuration: %w", err)
 			}
 		}
-		if sourceConfigJSON != "" {
-			if err := json.Unmarshal([]byte(sourceConfigJSON), &cfg.SourceConfiguration); err != nil {
+		if sourceConfigJSON.Valid && sourceConfigJSON.String != "" {
+			if err := json.Unmarshal([]byte(sourceConfigJSON.String), &cfg.SourceConfiguration); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal source configuration: %w", err)
 			}
 		}
@@ -901,10 +937,10 @@ func (s *sqlStore) GetCertificateByName(name string) (*models.StoredCertificate,
 		&cert.UpdatedAt,
 	)
 
-	if err == sql.ErrNoRows {
-		return nil, nil // Not found
-	}
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("failed to get certificate by name: %w", err)
 	}
 
@@ -1383,15 +1419,15 @@ func (s *sqlStore) UpdateAPIKey(apiKey *models.APIKey) error {
 		return fmt.Errorf("failed to update API key: %w", err)
 	}
 
-	s.logger.Info("API key updated successfully",
-		slog.String("name", apiKey.Name),
-		slog.String("apiId", apiKey.APIId),
-		slog.String("created_by", apiKey.CreatedBy))
-
 	// Commit the transaction
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
+
+	s.logger.Info("API key updated successfully",
+		slog.String("name", apiKey.Name),
+		slog.String("apiId", apiKey.APIId),
+		slog.String("created_by", apiKey.CreatedBy))
 
 	return nil
 }
@@ -1504,6 +1540,36 @@ func (s *sqlStore) addDeploymentConfigs(cfg *models.StoredConfig) (bool, error) 
 	return true, nil
 }
 
+func (s *sqlStore) addDeploymentConfigsTx(tx *sqlStoreTx, cfg *models.StoredConfig) (bool, error) {
+	query := `INSERT INTO deployment_configs (id, configuration, source_configuration) VALUES (?, ?, ?)`
+
+	stmt, err := tx.tx.Prepare(s.bind(query))
+	if err != nil {
+		return false, fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	configJSON, err := json.Marshal(cfg.Configuration)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal configuration: %w", err)
+	}
+	sourceConfigJSON, err := json.Marshal(cfg.SourceConfiguration)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal source configuration: %w", err)
+	}
+
+	_, err = stmt.Exec(
+		cfg.ID,
+		string(configJSON),
+		string(sourceConfigJSON),
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to insert deployment configuration: %w", err)
+	}
+
+	return true, nil
+}
+
 // updateDeploymentConfigs updates deployment configuration details in the database
 func (s *sqlStore) updateDeploymentConfigs(cfg *models.StoredConfig) (bool, error) {
 	query := `UPDATE deployment_configs SET configuration = ?, source_configuration = ? WHERE id = ?`
@@ -1543,7 +1609,45 @@ func (s *sqlStore) updateDeploymentConfigs(cfg *models.StoredConfig) (bool, erro
 	return true, nil
 }
 
-// GetAllAPIKeys retrieves all API keys from the database
+func (s *sqlStore) updateDeploymentConfigsTx(tx *sqlStoreTx, cfg *models.StoredConfig) (bool, error) {
+	query := `UPDATE deployment_configs SET configuration = ?, source_configuration = ? WHERE id = ?`
+
+	stmt, err := tx.tx.Prepare(s.bind(query))
+	if err != nil {
+		return false, fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	configJSON, err := json.Marshal(cfg.Configuration)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal configuration: %w", err)
+	}
+	sourceConfigJSON, err := json.Marshal(cfg.SourceConfiguration)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal source configuration: %w", err)
+	}
+
+	result, err := stmt.Exec(
+		string(configJSON),
+		string(sourceConfigJSON),
+		cfg.ID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to update deployment configuration: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return false, fmt.Errorf("no deployment config found for id=%s", cfg.ID)
+	}
+
+	return true, nil
+}
+
+// GetAllAPIKeys retrieves all active API keys from the database.
 func (s *sqlStore) GetAllAPIKeys() ([]*models.APIKey, error) {
 	query := `
 		SELECT id, name, display_name, api_key, masked_api_key, apiId, operations, status,

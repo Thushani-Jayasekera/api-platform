@@ -639,10 +639,12 @@ func (s *LLMDeploymentService) DeleteLLMProviderTemplate(handle string) (*models
 
 	if s.db != nil {
 		if err := s.db.DeleteLLMProviderTemplate(tmpl.ID); err != nil {
-			// Rollback: Re-add to lazy resource store if memory deletion fails
+			// Rollback: Re-add to lazy resource store if database deletion fails.
+			// publishTemplateAsLazyResource restores the template in lazy resources when
+			// s.db.DeleteLLMProviderTemplate fails (only if lazy resource manager is available).
 			if s.lazyResourceManager != nil {
 				if rollbackErr := s.publishTemplateAsLazyResource(&tmpl.Configuration, ""); rollbackErr != nil {
-					slog.Error("Failed to rollback lazy resource after memory store deletion failure",
+					slog.Error("Failed to rollback lazy resource after database deletion failure",
 						slog.String("template_handle", handle),
 						slog.Any("rollback_error", rollbackErr))
 				}

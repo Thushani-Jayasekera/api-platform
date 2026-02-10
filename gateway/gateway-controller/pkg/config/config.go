@@ -704,7 +704,7 @@ func (c *Config) Validate() error {
 		if pg.SSLMode == "" {
 			pg.SSLMode = "require"
 		}
-		validSSLModes := []string{"disable", "require", "verify-ca", "verify-full"}
+		validSSLModes := []string{"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
 		isValidSSLMode := false
 		for _, mode := range validSSLModes {
 			if strings.EqualFold(pg.SSLMode, mode) {
@@ -714,7 +714,7 @@ func (c *Config) Validate() error {
 			}
 		}
 		if !isValidSSLMode {
-			return fmt.Errorf("storage.postgres.sslmode must be one of: disable, require, verify-ca, verify-full, got: %s", pg.SSLMode)
+			return fmt.Errorf("storage.postgres.sslmode must be one of: disable, allow, prefer, require, verify-ca, verify-full, got: %s", pg.SSLMode)
 		}
 
 		if pg.ConnectTimeout <= 0 {

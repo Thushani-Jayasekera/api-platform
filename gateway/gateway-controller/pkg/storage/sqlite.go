@@ -40,7 +40,7 @@ const (
 	sqliteUniqueTemplatesHandle        = "UNIQUE constraint failed: llm_provider_templates.handle"
 	sqliteUniqueAPIKeysKey             = "UNIQUE constraint failed: api_keys.api_key"
 	sqliteUniqueAPIKeysID              = "UNIQUE constraint failed: api_keys.id"
-	sqliteUniqueAPIKeysExternalIndex   = "UNIQUE constraint failed: index 'idx_unique_external_api_key'"
+	sqliteUniqueAPIKeysExternalIndex   = "UNIQUE constraint failed: api_keys.apiId, api_keys.index_key"
 )
 
 // SQLiteStorage implements the Storage interface using SQLite
@@ -308,9 +308,9 @@ func (s *SQLiteStorage) initSchema() error {
 			version = 6
 		}
 
-		if version == 6 {
-			// Rebuild deployments table to update CHECK constraint to include 'undeployed' status
-			s.logger.Info("Migrating schema to version 7 (adding 'undeployed' status to deployments)")
+			if version == 6 {
+				// Rebuild deployments table to update CHECK constraint to include 'undeployed' status
+				s.logger.Info("Migrating schema to version 7 (adding 'undeployed' status to deployments)")
 
 			// Disable foreign keys before migration (PRAGMA cannot be used inside transaction)
 			if _, err := s.db.Exec("PRAGMA foreign_keys = OFF"); err != nil {
@@ -402,12 +402,19 @@ func (s *SQLiteStorage) initSchema() error {
 				return fmt.Errorf("failed to re-enable foreign keys after migration: %w", err)
 			}
 
-			s.logger.Info("Schema migrated to version 7 (deployments status includes 'undeployed')")
-			version = 7
-		}
+				s.logger.Info("Schema migrated to version 7 (deployments status includes 'undeployed')")
+				version = 7
+			}
 
-		s.logger.Info("Database schema up to date", slog.Int("version", version))
-	}
+			// Ensure external API key uniqueness index exists for all migrated DBs.
+			if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_external_api_key
+					ON api_keys(apiId, index_key)
+					WHERE source = 'external' AND index_key IS NOT NULL;`); err != nil {
+				return fmt.Errorf("failed to create api_keys external unique index: %w", err)
+			}
+
+			s.logger.Info("Database schema up to date", slog.Int("version", version))
+		}
 
 	return nil
 }

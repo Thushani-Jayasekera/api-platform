@@ -169,10 +169,10 @@ type Storage interface {
 	// Used for listing API keys associated with an API.
 	GetAPIKeysByAPI(apiId string) ([]*models.APIKey, error)
 
-	// GetAllAPIKeys retrieves all API keys from the database.
+	// GetAllAPIKeys retrieves all active API keys from the database.
 	//
-	// Returns an empty slice if no API keys exist.
-	// Used for loading API keys into memory on startup.
+	// Returns an empty slice if no active API keys exist.
+	// Used for loading active API keys into memory on startup.
 	GetAllAPIKeys() ([]*models.APIKey, error)
 
 	// GetAPIKeysByAPIAndName retrieves an API key by its name within a specific API.

@@ -56,7 +56,7 @@ func validConfig() *Config {
 					Timeouts: UpstreamTimeouts{
 						RouteTimeoutInMs:     60000,
 						RouteIdleTimeoutInMs: 30000,
-						ConnectTimeoutInMs:  5000,
+						ConnectTimeoutInMs:   5000,
 					},
 				},
 				PolicyEngine: PolicyEngineConfig{
@@ -137,6 +137,7 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 		configure   func(*Config)
 		wantErr     bool
 		errContains string
+		wantSSLMode string
 	}{
 		{
 			name: "Valid postgres with fields",
@@ -191,6 +192,28 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 			},
 			wantErr:     true,
 			errContains: "storage.postgres.sslmode must be one of",
+		},
+		{
+			name: "Valid sslmode allow",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.GatewayController.Storage.Postgres.SSLMode = "allow"
+			},
+			wantErr:     false,
+			wantSSLMode: "allow",
+		},
+		{
+			name: "Valid sslmode prefer case-insensitive",
+			configure: func(cfg *Config) {
+				cfg.GatewayController.Storage.Postgres.Host = "localhost"
+				cfg.GatewayController.Storage.Postgres.Database = "testdb"
+				cfg.GatewayController.Storage.Postgres.User = "user"
+				cfg.GatewayController.Storage.Postgres.SSLMode = "PREFER"
+			},
+			wantErr:     false,
+			wantSSLMode: "prefer",
 		},
 		{
 			name: "Invalid max open conns",
@@ -264,6 +287,9 @@ func TestConfig_Validate_PostgresConfig(t *testing.T) {
 				}
 			} else {
 				assert.NoError(t, err)
+				if tt.wantSSLMode != "" {
+					assert.Equal(t, tt.wantSSLMode, cfg.GatewayController.Storage.Postgres.SSLMode)
+				}
 			}
 		})
 	}
@@ -738,12 +764,12 @@ func TestConfig_ValidateTLSTrustedCertPath(t *testing.T) {
 
 func TestConfig_ValidateTimeoutConfig(t *testing.T) {
 	tests := []struct {
-		name            string
-		routeTimeout    uint32
-		idleTimeout     uint32
-		connectTimeout  uint32
-		wantErr         bool
-		errContains     string
+		name           string
+		routeTimeout   uint32
+		idleTimeout    uint32
+		connectTimeout uint32
+		wantErr        bool
+		errContains    string
 	}{
 		{name: "Valid timeouts", routeTimeout: 60000, idleTimeout: 30000, connectTimeout: 5000, wantErr: false},
 		{name: "Zero route timeout", routeTimeout: 0, idleTimeout: 30000, connectTimeout: 5000, wantErr: true, errContains: "route_timeout_in_ms must be positive"},

@@ -121,17 +121,37 @@ func newPostgresStorage(cfg PostgresConnectionConfig, logger *slog.Logger) (*Pos
 }
 
 // initSchema creates the database schema if it doesn't exist.
-func (s *PostgresStorage) initSchema() error {
-	if _, err := s.exec(`SELECT pg_advisory_lock(?)`, postgresSchemaLockID); err != nil {
-		return fmt.Errorf("failed to acquire schema migration lock: %w", err)
+func (s *PostgresStorage) initSchema() (retErr error) {
+	ctx := context.Background()
+
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire postgres connection for schema migration: %w", err)
 	}
 	defer func() {
-		if _, err := s.exec(`SELECT pg_advisory_unlock(?)`, postgresSchemaLockID); err != nil {
-			s.logger.Warn("Failed to release schema migration lock", slog.Any("error", err))
+		if closeErr := conn.Close(); closeErr != nil {
+			if retErr != nil {
+				retErr = fmt.Errorf("%w; failed to close schema migration connection: %v", retErr, closeErr)
+			} else {
+				retErr = fmt.Errorf("failed to close schema migration connection: %w", closeErr)
+			}
 		}
 	}()
 
-	if _, err := s.exec(`
+	if _, err := conn.ExecContext(ctx, s.rebind(`SELECT pg_advisory_lock(?)`), postgresSchemaLockID); err != nil {
+		return fmt.Errorf("failed to acquire schema migration lock: %w", err)
+	}
+	defer func() {
+		if _, unlockErr := conn.ExecContext(ctx, s.rebind(`SELECT pg_advisory_unlock(?)`), postgresSchemaLockID); unlockErr != nil {
+			if retErr != nil {
+				retErr = fmt.Errorf("%w; failed to release schema migration lock: %v", retErr, unlockErr)
+			} else {
+				retErr = fmt.Errorf("failed to release schema migration lock: %w", unlockErr)
+			}
+		}
+	}()
+
+	if _, err := conn.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			id INTEGER PRIMARY KEY,
 			version INTEGER NOT NULL,
@@ -140,7 +160,7 @@ func (s *PostgresStorage) initSchema() error {
 	`); err != nil {
 		return fmt.Errorf("failed to ensure schema_migrations table: %w", err)
 	}
-	if _, err := s.exec(`
+	if _, err := conn.ExecContext(ctx, `
 		INSERT INTO schema_migrations (id, version)
 		VALUES (1, 0)
 		ON CONFLICT (id) DO NOTHING
@@ -149,20 +169,20 @@ func (s *PostgresStorage) initSchema() error {
 	}
 
 	var version int
-	if err := s.queryRow(`SELECT version FROM schema_migrations WHERE id = 1`).Scan(&version); err != nil {
+	if err := conn.QueryRowContext(ctx, `SELECT version FROM schema_migrations WHERE id = 1`).Scan(&version); err != nil {
 		return fmt.Errorf("failed to query schema version: %w", err)
 	}
 
 	if version < postgresSchemaVersion {
 		s.logger.Info("Initializing PostgreSQL schema", slog.Int("target_version", postgresSchemaVersion))
-		if err := s.execSchemaStatements(postgresSchemaSQL); err != nil {
+		if err := s.execSchemaStatements(ctx, conn, postgresSchemaSQL); err != nil {
 			return fmt.Errorf("failed to execute postgres schema: %w", err)
 		}
-		if _, err := s.exec(`
+		if _, err := conn.ExecContext(ctx, s.rebind(`
 			UPDATE schema_migrations
 			SET version = ?, updated_at = CURRENT_TIMESTAMP
 			WHERE id = 1
-		`, postgresSchemaVersion); err != nil {
+		`), postgresSchemaVersion); err != nil {
 			return fmt.Errorf("failed to update schema_migrations: %w", err)
 		}
 		version = postgresSchemaVersion
@@ -172,15 +192,9 @@ func (s *PostgresStorage) initSchema() error {
 	return nil
 }
 
-func (s *PostgresStorage) execSchemaStatements(schema string) error {
-	for _, stmt := range strings.Split(schema, ";") {
-		sqlStmt := strings.TrimSpace(stmt)
-		if sqlStmt == "" {
-			continue
-		}
-		if _, err := s.db.Exec(sqlStmt); err != nil {
-			return err
-		}
+func (s *PostgresStorage) execSchemaStatements(ctx context.Context, conn *sql.Conn, schema string) error {
+	if _, err := conn.ExecContext(ctx, schema); err != nil {
+		return err
 	}
 	return nil
 }
@@ -274,7 +288,15 @@ func isPostgresUniqueConstraintError(err error) bool {
 // isPostgresCertificateUniqueConstraintError checks if the error is a UNIQUE constraint violation for certificates.
 func isPostgresCertificateUniqueConstraintError(err error) bool {
 	pgErr := extractPgError(err)
-	return pgErr != nil && pgErr.Code == pgUniqueViolationCode
+	if pgErr == nil || pgErr.Code != pgUniqueViolationCode {
+		return false
+	}
+	switch pgErr.ConstraintName {
+	case "certificates_name_key", "certificates_pkey":
+		return true
+	default:
+		return strings.Contains(pgErr.TableName, "certificates")
+	}
 }
 
 func isPostgresTemplateUniqueConstraintError(err error) bool {

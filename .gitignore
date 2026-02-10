@@ -126,3 +126,4 @@ cli/src/tests/target/
 # Component specific patterns
 # Platform API
 platform-api/src/data
+gateway/gateway-runtime/target

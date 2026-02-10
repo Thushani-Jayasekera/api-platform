@@ -24,6 +24,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -309,6 +310,28 @@ func TestSQLiteStorage_GetAllConfigs_JSONUnmarshalError(t *testing.T) {
 
 	_, err = storage.GetAllConfigs()
 	assert.Assert(t, err != nil)
+}
+
+func TestSQLiteStorage_SaveConfig_RollsBackDeploymentOnConfigInsertFailure(t *testing.T) {
+	storage := setupTestStorage(t)
+	defer storage.db.Close()
+
+	cfg := createTestStoredConfig()
+	// Channels are not JSON serializable; this forces addDeploymentConfigsTx to fail.
+	cfg.SourceConfiguration = make(chan int)
+
+	err := storage.SaveConfig(cfg)
+	assert.Assert(t, err != nil)
+
+	var deploymentCount int
+	err = storage.db.QueryRow(`SELECT COUNT(*) FROM deployments WHERE id = ?`, cfg.ID).Scan(&deploymentCount)
+	assert.NilError(t, err)
+	assert.Equal(t, deploymentCount, 0)
+
+	var configCount int
+	err = storage.db.QueryRow(`SELECT COUNT(*) FROM deployment_configs WHERE id = ?`, cfg.ID).Scan(&configCount)
+	assert.NilError(t, err)
+	assert.Equal(t, configCount, 0)
 }
 
 func TestSQLiteStorage_GetAllConfigsByKind_Success(t *testing.T) {
@@ -719,6 +742,40 @@ func TestLoadAPIKeysFromDatabase_GetAllError(t *testing.T) {
 	apiKeyStore := NewAPIKeyStore(logger)
 	err = LoadAPIKeysFromDatabase(storage, configStore, apiKeyStore)
 	assert.Assert(t, err != nil)
+}
+
+type failingAPIKeyStore struct {
+	err error
+}
+
+func (f *failingAPIKeyStore) Store(_ *models.APIKey) error {
+	return f.err
+}
+
+func TestLoadAPIKeysFromDatabase_APIKeyStoreErrorRollsBackConfigStore(t *testing.T) {
+	storage := setupTestStorage(t)
+	defer storage.db.Close()
+
+	// Save a config first to satisfy foreign key constraint
+	config := createTestStoredConfig()
+	err := storage.SaveConfig(config)
+	assert.NilError(t, err)
+
+	// Create test API key
+	apiKey := createTestAPIKey()
+	apiKey.APIId = config.ID
+	err = storage.SaveAPIKey(apiKey)
+	assert.NilError(t, err)
+
+	configStore := NewConfigStore()
+	loaderStore := &failingAPIKeyStore{err: fmt.Errorf("simulated apiKeyStore.Store failure")}
+
+	err = LoadAPIKeysFromDatabase(storage, configStore, loaderStore)
+	assert.Assert(t, err != nil)
+	assert.Assert(t, strings.Contains(err.Error(), "rolled back ConfigStore entry"))
+
+	_, getErr := configStore.GetAPIKeyByID(apiKey.APIId, apiKey.ID)
+	assert.Assert(t, errors.Is(getErr, ErrNotFound))
 }
 
 func TestSQLiteStorage_CountActiveAPIKeysByUserAndAPI_Success(t *testing.T) {
