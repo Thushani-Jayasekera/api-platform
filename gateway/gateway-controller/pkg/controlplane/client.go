@@ -22,6 +22,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -657,21 +658,28 @@ func (c *Client) handleAPIDeployedEvent(event map[string]interface{}) {
 					slog.String("correlation_id", deployedEvent.CorrelationID))
 			}
 		} else if result.IsUpdate {
-			// No policies but this is an update, so remove any existing policies
+			// API was updated and no longer has policies, remove the existing policy configuration
 			policyID := result.StoredConfig.ID + "-policies"
-			if _, err := c.policyManager.GetPolicy(policyID); err == nil {
-				if err := c.policyManager.RemovePolicy(policyID); err != nil {
-					c.logger.Error("Failed to remove policy from policy engine",
-						slog.Any("error", err),
+			if err := c.policyManager.RemovePolicy(policyID); err != nil {
+				// Only treat "not found" as non-error (API may never have had policies)
+				// Other errors (storage failures, snapshot update failures) should be logged as errors
+				if errors.Is(err, storage.ErrPolicyNotFound) {
+					c.logger.Debug("No policy configuration to remove",
 						slog.String("api_id", apiID),
 						slog.String("policy_id", policyID),
 						slog.String("correlation_id", deployedEvent.CorrelationID))
 				} else {
-					c.logger.Info("Successfully removed policy from policy engine",
+					c.logger.Error("Failed to remove policy configuration",
+						slog.Any("error", err),
 						slog.String("api_id", apiID),
 						slog.String("policy_id", policyID),
 						slog.String("correlation_id", deployedEvent.CorrelationID))
 				}
+			} else {
+				c.logger.Info("Derived policy configuration removed",
+					slog.String("api_id", apiID),
+					slog.String("policy_id", policyID),
+					slog.String("correlation_id", deployedEvent.CorrelationID))
 			}
 		}
 	} else if c.policyManager == nil {
