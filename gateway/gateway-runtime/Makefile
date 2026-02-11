@@ -115,7 +115,7 @@ build-and-push-multiarch: ## Build and push Gateway Runtime Docker image for mul
 	@echo "Multi-arch Docker image built and pushed: $(IMAGE_NAME):$(VERSION)"
 
 test: ## Run policy-engine tests
-	cd policy-engine && go test -v $$(go list ./... | grep -v /testutils) -cover
+	cd policy-engine && go test -v $$(go list ./... | grep -v /testutils) -cover -coverprofile=unit-test-coverage.txt
 
 clean: ## Clean Docker images
 	@echo "Cleaning Docker images..."
