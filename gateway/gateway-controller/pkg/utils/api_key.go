@@ -475,6 +475,7 @@ func (s *APIKeyService) RevokeAPIKey(params APIKeyRevocationParams) (*APIKeyRevo
 }
 
 // UpdateAPIKey updates an existing API key with a specific provided value
+// If the API key doesn't exist, creates a new one instead of failing
 func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateResult, error) {
 	baseLogger := params.Logger
 	if baseLogger == nil {
@@ -503,8 +504,45 @@ func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateRe
 	// Get the existing API key by name
 	existingKey, err := s.store.GetAPIKeyByName(config.ID, params.APIKeyName)
 	if err != nil {
-		logger.Warn("API key not found for update")
-		return nil, fmt.Errorf("API key '%s' not found for API '%s'", params.APIKeyName, params.Handle)
+		// Only create a new API key if it's a "not found" error
+		// For other errors (DB connection, etc.), return the error
+		if storage.IsNotFoundError(err) {
+			logger.Info("API key not found for update, creating new API key",
+				slog.String("handle", params.Handle),
+				slog.String("api_key_name", params.APIKeyName),
+				slog.String("correlation_id", params.CorrelationID))
+
+			// Create the new API key using the provided request
+			creationParams := APIKeyCreationParams{
+				Handle:        params.Handle,
+				Request:       params.Request,
+				User:          user,
+				CorrelationID: params.CorrelationID,
+				Logger:        logger,
+			}
+
+			creationResult, err := s.CreateAPIKey(creationParams)
+			if err != nil {
+				logger.Error("Failed to create new API key during update",
+					slog.Any("error", err),
+					slog.String("handle", params.Handle),
+					slog.String("correlation_id", params.CorrelationID))
+				return nil, fmt.Errorf("failed to create new API key: %w", err)
+			}
+
+			// Convert creation result to update result
+			return &APIKeyUpdateResult{
+				Response: creationResult.Response,
+			}, nil
+		}
+
+		// For non-"not found" errors, return the error
+		logger.Warn("Failed to retrieve API key for update",
+			slog.String("handle", params.Handle),
+			slog.String("api_key_name", params.APIKeyName),
+			slog.String("correlation_id", params.CorrelationID),
+			slog.Any("error", err))
+		return nil, fmt.Errorf("failed to retrieve API key '%s' for API '%s': %w", params.APIKeyName, params.Handle, err)
 	}
 
 	// Validate that only external API keys can be updated
