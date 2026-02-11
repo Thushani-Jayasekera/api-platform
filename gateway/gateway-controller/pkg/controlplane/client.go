@@ -564,6 +564,10 @@ func (c *Client) handleMessage(messageType int, message []byte) {
 		c.handleLLMProviderDeployedEvent(event)
 	case "llmprovider.undeployed":
 		c.handleLLMProviderUndeployedEvent(event)
+	case "llmproxy.deployed":
+		c.handleLLMProxyDeployedEvent(event)
+	case "llmproxy.undeployed":
+		c.handleLLMProxyUndeployedEvent(event)
 	case "apikey.created":
 		c.handleAPIKeyCreatedEvent(event)
 	case "apikey.updated":
@@ -967,6 +971,143 @@ func (c *Client) handleLLMProviderUndeployedEvent(event map[string]interface{}) 
 
 	c.logger.Info("Successfully processed LLM provider undeployment event",
 		slog.String("provider_id", providerID),
+		slog.String("correlation_id", undeployedEvent.CorrelationID),
+	)
+}
+
+// handleLLMProxyDeployedEvent handles LLM proxy deployment events
+func (c *Client) handleLLMProxyDeployedEvent(event map[string]interface{}) {
+	c.logger.Info("LLM Proxy Deployment Event",
+		slog.Any("payload", event["payload"]),
+		slog.Any("timestamp", event["timestamp"]),
+		slog.Any("correlationId", event["correlationId"]),
+	)
+
+	// Parse the event into structured format
+	eventBytes, err := json.Marshal(event)
+	if err != nil {
+		c.logger.Error("Failed to marshal LLM proxy deployment event for parsing",
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	var deployedEvent LLMProxyDeployedEvent
+	if err := json.Unmarshal(eventBytes, &deployedEvent); err != nil {
+		c.logger.Error("Failed to parse LLM proxy deployment event",
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	proxyID := deployedEvent.Payload.ProxyID
+	if proxyID == "" {
+		c.logger.Error("Proxy ID is empty in LLM proxy deployment event")
+		return
+	}
+
+	c.logger.Info("Processing LLM proxy deployment",
+		slog.String("proxy_id", proxyID),
+		slog.String("environment", deployedEvent.Payload.Environment),
+		slog.String("deployment_id", deployedEvent.Payload.DeploymentID),
+		slog.String("vhost", deployedEvent.Payload.VHost),
+		slog.String("correlation_id", deployedEvent.CorrelationID),
+	)
+
+	// Fetch LLM proxy definition from control plane
+	zipData, err := c.apiUtilsService.FetchLLMProxyDefinition(proxyID)
+	if err != nil {
+		c.logger.Error("Failed to fetch LLM proxy definition",
+			slog.String("proxy_id", proxyID),
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	// Extract YAML from ZIP
+	yamlData, err := c.apiUtilsService.ExtractYAMLFromZip(zipData)
+	if err != nil {
+		c.logger.Error("Failed to extract YAML from LLM proxy ZIP",
+			slog.String("proxy_id", proxyID),
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	if c.llmDeploymentService == nil {
+		c.logger.Error("LLM deployment service not available",
+			slog.String("proxy_id", proxyID),
+			slog.String("correlation_id", deployedEvent.CorrelationID),
+		)
+		return
+	}
+
+	// Create LLM proxy configuration from YAML using the deployment service
+	_, err = c.apiUtilsService.CreateLLMProxyFromYAML(yamlData, proxyID, deployedEvent.CorrelationID, c.llmDeploymentService)
+	if err != nil {
+		c.logger.Error("Failed to create LLM proxy from YAML",
+			slog.String("proxy_id", proxyID),
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	c.logger.Info("Successfully processed LLM proxy deployment event",
+		slog.String("proxy_id", proxyID),
+		slog.String("correlation_id", deployedEvent.CorrelationID),
+	)
+}
+
+// handleLLMProxyUndeployedEvent handles LLM proxy undeployment events
+func (c *Client) handleLLMProxyUndeployedEvent(event map[string]interface{}) {
+	c.logger.Info("LLM Proxy Undeployment Event",
+		slog.Any("payload", event["payload"]),
+		slog.Any("timestamp", event["timestamp"]),
+		slog.Any("correlationId", event["correlationId"]),
+	)
+
+	// Parse the event into structured format
+	eventBytes, err := json.Marshal(event)
+	if err != nil {
+		c.logger.Error("Failed to marshal LLM proxy undeployment event for parsing",
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	var undeployedEvent LLMProxyUndeployedEvent
+	if err := json.Unmarshal(eventBytes, &undeployedEvent); err != nil {
+		c.logger.Error("Failed to parse LLM proxy undeployment event",
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	proxyID := undeployedEvent.Payload.ProxyID
+	if proxyID == "" {
+		c.logger.Error("Proxy ID is empty in LLM proxy undeployment event")
+		return
+	}
+
+	if c.llmDeploymentService == nil {
+		c.logger.Error("LLM deployment service not available",
+			slog.String("proxy_id", proxyID),
+			slog.String("correlation_id", undeployedEvent.CorrelationID),
+		)
+		return
+	}
+
+	_, err = c.llmDeploymentService.DeleteLLMProxy(proxyID, undeployedEvent.CorrelationID, c.logger)
+	if err != nil {
+		c.logger.Error("Failed to delete LLM proxy configuration",
+			slog.String("proxy_id", proxyID),
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	c.logger.Info("Successfully processed LLM proxy undeployment event",
+		slog.String("proxy_id", proxyID),
 		slog.String("correlation_id", undeployedEvent.CorrelationID),
 	)
 }
