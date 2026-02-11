@@ -63,7 +63,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409 // indirect
 )
 
-// Local module replacement for SDK in Docker builds
-replace github.com/wso2/api-platform/sdk => ../../../sdk
-
 replace github.com/wso2/api-platform/common => ../../../common

@@ -22,7 +22,7 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/stretchr/testify v1.11.1
 	github.com/wso2/api-platform/common v0.0.0
-	github.com/wso2/api-platform/sdk v0.3.1
+	github.com/wso2/api-platform/sdk v0.3.9
 	github.com/xeipuuv/gojsonschema v1.2.0
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
@@ -104,8 +104,4 @@ require (
 // combinedWatcher is using "github.com/envoyproxy/go-control-plane/pkg/server/stream/v3" StreamState which is not available in v0.14.0
 replace github.com/envoyproxy/go-control-plane v0.13.5-0.20251024222203-75eaa193e329 => github.com/envoyproxy/go-control-plane v0.13.4
 
-// Local module replacements for Docker builds
-replace (
-	github.com/wso2/api-platform/common => ../../common
-	github.com/wso2/api-platform/sdk => ../../sdk
-)
+replace github.com/wso2/api-platform/common => ../../common
