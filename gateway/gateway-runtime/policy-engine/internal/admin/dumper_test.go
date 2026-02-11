@@ -36,8 +36,7 @@ import (
 func TestDumpConfig_Empty(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	result := DumpConfig(k, reg, "pc-v1")
@@ -54,17 +53,20 @@ func TestDumpConfig_Empty(t *testing.T) {
 func TestDumpConfig_WithPolicies(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: map[string]*policy.PolicyDefinition{
+		Policies: map[string]*registry.PolicyEntry{
 			"test-policy:v1.0.0": {
-				Name:    "test-policy",
-				Version: "v1.0.0",
+				Definition: &policy.PolicyDefinition{
+					Name:    "test-policy",
+					Version: "v1.0.0",
+				},
 			},
 			"another-policy:v2.0.0": {
-				Name:    "another-policy",
-				Version: "v2.0.0",
+				Definition: &policy.PolicyDefinition{
+					Name:    "another-policy",
+					Version: "v2.0.0",
+				},
 			},
 		},
-		Factories: make(map[string]policy.PolicyFactory),
 	}
 
 	result := DumpConfig(k, reg, "pc-v2")
@@ -88,8 +90,7 @@ func TestDumpConfig_WithRoutes(t *testing.T) {
 	k.RegisterRoute("test-route", chain)
 
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	result := DumpConfig(k, reg, "pc-v3")
@@ -112,7 +113,7 @@ func TestDumpConfig_WithRoutes(t *testing.T) {
 
 func TestDumpPolicyRegistry_Empty(t *testing.T) {
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	result := dumpPolicyRegistry(reg)
@@ -123,14 +124,18 @@ func TestDumpPolicyRegistry_Empty(t *testing.T) {
 
 func TestDumpPolicyRegistry_Multiple(t *testing.T) {
 	reg := &registry.PolicyRegistry{
-		Definitions: map[string]*policy.PolicyDefinition{
+		Policies: map[string]*registry.PolicyEntry{
 			"auth-policy:v1.0.0": {
-				Name:    "auth-policy",
-				Version: "v1.0.0",
+				Definition: &policy.PolicyDefinition{
+					Name:    "auth-policy",
+					Version: "v1.0.0",
+				},
 			},
 			"rate-limit:v2.0.0": {
-				Name:    "rate-limit",
-				Version: "v2.0.0",
+				Definition: &policy.PolicyDefinition{
+					Name:    "rate-limit",
+					Version: "v2.0.0",
+				},
 			},
 		},
 	}

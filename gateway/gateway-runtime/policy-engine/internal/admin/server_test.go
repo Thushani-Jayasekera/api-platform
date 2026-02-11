@@ -33,7 +33,6 @@ import (
 	"github.com/wso2/api-platform/gateway/gateway-runtime/policy-engine/internal/config"
 	"github.com/wso2/api-platform/gateway/gateway-runtime/policy-engine/internal/kernel"
 	"github.com/wso2/api-platform/gateway/gateway-runtime/policy-engine/internal/registry"
-	policy "github.com/wso2/api-platform/sdk/gateway/policy/v1alpha"
 )
 
 // =============================================================================
@@ -57,8 +56,7 @@ func TestNewServer(t *testing.T) {
 	}
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	server := NewServer(cfg, k, reg, nil)
@@ -81,8 +79,7 @@ func TestServer_StartAndStop(t *testing.T) {
 	}
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	server := NewServer(cfg, k, reg, &mockXDSSyncProvider{version: "pc-v11"})
@@ -137,8 +134,7 @@ func TestServer_StartWithInvalidPort(t *testing.T) {
 	}
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	server := NewServer(cfg, k, reg, nil)

@@ -30,8 +30,7 @@ import (
 // newTestRegistry creates a fresh PolicyRegistry for testing (not using the global singleton)
 func newTestRegistry() *PolicyRegistry {
 	return &PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*PolicyEntry),
 	}
 }
 
@@ -152,10 +151,11 @@ func TestRegister(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify registration
-		assert.Len(t, reg.Definitions, 1)
-		assert.Len(t, reg.Factories, 1)
-		assert.NotNil(t, reg.Definitions["jwt-auth:v1.0.0"])
-		assert.NotNil(t, reg.Factories["jwt-auth:v1.0.0"])
+		assert.Len(t, reg.Policies, 1)
+		entry := reg.Policies["jwt-auth:v1.0.0"]
+		assert.NotNil(t, entry)
+		assert.NotNil(t, entry.Definition)
+		assert.NotNil(t, entry.Factory)
 	})
 
 	t.Run("duplicate registration returns error", func(t *testing.T) {
@@ -197,50 +197,12 @@ func TestRegister(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		assert.Len(t, reg.Definitions, 4)
-		assert.Len(t, reg.Factories, 4)
+		assert.Len(t, reg.Policies, 4)
 	})
 }
 
-// TestGetDefinition tests the GetDefinition function
-func TestGetDefinition(t *testing.T) {
-	reg := newTestRegistry()
-
-	// Register a policy
-	def := &policy.PolicyDefinition{
-		Name:        "jwt-auth",
-		Version:     "v1.0.0",
-		Description: "JWT Authentication Policy",
-	}
-	factory := testutils.NewMockPolicyFactory("jwt-auth", "v1.0.0")
-	err := reg.Register(def, factory)
-	require.NoError(t, err)
-
-	t.Run("get existing definition", func(t *testing.T) {
-		result, err := reg.GetDefinition("jwt-auth", "v1.0.0")
-		require.NoError(t, err)
-		assert.Equal(t, "jwt-auth", result.Name)
-		assert.Equal(t, "v1.0.0", result.Version)
-		assert.Equal(t, "JWT Authentication Policy", result.Description)
-	})
-
-	t.Run("get non-existent definition", func(t *testing.T) {
-		result, err := reg.GetDefinition("non-existent", "v1.0.0")
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "policy definition not found")
-	})
-
-	t.Run("get wrong version", func(t *testing.T) {
-		result, err := reg.GetDefinition("jwt-auth", "v2.0.0")
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "policy definition not found")
-	})
-}
-
-// TestGetFactory tests the GetFactory function
-func TestGetFactory(t *testing.T) {
+// TestPolicyExists tests the PolicyExists function
+func TestPolicyExists(t *testing.T) {
 	reg := newTestRegistry()
 
 	// Register a policy
@@ -252,22 +214,21 @@ func TestGetFactory(t *testing.T) {
 	err := reg.Register(def, factory)
 	require.NoError(t, err)
 
-	t.Run("get existing factory", func(t *testing.T) {
-		result, err := reg.GetFactory("jwt-auth", "v1.0.0")
-		require.NoError(t, err)
-		assert.NotNil(t, result)
-
-		// Verify factory works
-		instance, err := result(policy.PolicyMetadata{}, nil)
-		require.NoError(t, err)
-		assert.NotNil(t, instance)
+	t.Run("existing policy", func(t *testing.T) {
+		err := reg.PolicyExists("jwt-auth", "v1.0.0")
+		assert.NoError(t, err)
 	})
 
-	t.Run("get non-existent factory", func(t *testing.T) {
-		result, err := reg.GetFactory("non-existent", "v1.0.0")
+	t.Run("non-existent policy", func(t *testing.T) {
+		err := reg.PolicyExists("non-existent", "v1.0.0")
 		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "policy factory not found")
+		assert.Contains(t, err.Error(), "policy definition not found")
+	})
+
+	t.Run("wrong version", func(t *testing.T) {
+		err := reg.PolicyExists("jwt-auth", "v2.0.0")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "policy definition not found")
 	})
 }
 
@@ -355,7 +316,7 @@ func TestDumpPolicies(t *testing.T) {
 		delete(dump, "jwt-auth:v1.0.0")
 
 		// Original should be unchanged
-		assert.Len(t, reg.Definitions, 1)
+		assert.Len(t, reg.Policies, 1)
 	})
 }
 
