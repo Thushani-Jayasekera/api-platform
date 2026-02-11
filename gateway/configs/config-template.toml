@@ -245,15 +245,11 @@ event_queue_size = 10000
 batch_size = 50
 timer_wakeup_seconds = 3
 
-[analytics.grpc_access_logs]
-host = "policy-engine"
-log_name = "envoy_access_log"
+[analytics.grpc_event_server]
 buffer_flush_interval = 1000000000
 buffer_size_bytes = 16384
 grpc_request_timeout = 20000000000
-
-[analytics.access_logs_service]
-als_server_port = 18090
+server_port = 18090
 shutdown_timeout = "600s"
 public_key_path = ""
 private_key_path = ""

@@ -214,7 +214,7 @@ func TestStartAccessLogServiceServer_TCP(t *testing.T) {
 			Publishers: nil,
 			AccessLogsServiceCfg: config.AccessLogsServiceConfig{
 				Mode:                  "tcp",
-				ALSServerPort:         19001, // Use non-standard port to avoid conflicts
+				ServerPort:         19001, // Use non-standard port to avoid conflicts
 				ALSPlainText:          true,
 				ExtProcMaxMessageSize: 1024 * 1024 * 4,
 				ExtProcMaxHeaderLimit: 8192,

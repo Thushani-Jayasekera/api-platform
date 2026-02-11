@@ -1024,9 +1024,8 @@ func TestTranslator_CreateALSCluster(t *testing.T) {
 		routerCfg := testRouterConfig()
 		cfg := testConfig()
 		cfg.Analytics.Enabled = true
-		cfg.Analytics.GRPCAccessLogCfg = config.GRPCAccessLogConfig{
+		cfg.Analytics.GRPCEventServerCfg = config.GRPCEventServerConfig{
 			Mode:                "uds",
-			LogName:             "envoy_access_log",
 			BufferFlushInterval: 1000000000,
 			BufferSizeBytes:     16384,
 			GRPCRequestTimeout:  20000000000,
@@ -1052,9 +1051,8 @@ func TestTranslator_CreateALSCluster(t *testing.T) {
 		routerCfg := testRouterConfig()
 		cfg := testConfig()
 		cfg.Analytics.Enabled = true
-		cfg.Analytics.GRPCAccessLogCfg = config.GRPCAccessLogConfig{
+		cfg.Analytics.GRPCEventServerCfg = config.GRPCEventServerConfig{
 			Mode:                "",
-			LogName:             "envoy_access_log",
 			BufferFlushInterval: 1000000000,
 			BufferSizeBytes:     16384,
 			GRPCRequestTimeout:  20000000000,
@@ -1079,15 +1077,15 @@ func TestTranslator_CreateALSCluster(t *testing.T) {
 		routerCfg := testRouterConfig()
 		cfg := testConfig()
 		cfg.Analytics.Enabled = true
-		cfg.Analytics.GRPCAccessLogCfg = config.GRPCAccessLogConfig{
+		cfg.Analytics.GRPCEventServerCfg = config.GRPCEventServerConfig{
 			Mode:                "tcp",
-			Host:                "policy-engine",
 			Port:                18090,
-			LogName:             "envoy_access_log",
 			BufferFlushInterval: 1000000000,
 			BufferSizeBytes:     16384,
 			GRPCRequestTimeout:  20000000000,
 		}
+		// Set policy engine host - ALS uses the same host in TCP mode
+		cfg.Router.PolicyEngine.Host = "policy-engine"
 		translator := NewTranslator(logger, routerCfg, nil, cfg)
 
 		c := translator.createALSCluster()
@@ -1111,11 +1109,9 @@ func TestTranslator_CreateGRPCAccessLog(t *testing.T) {
 	logger := createTestLogger()
 	routerCfg := testRouterConfig()
 	cfg := testConfig()
-	cfg.Analytics.GRPCAccessLogCfg = config.GRPCAccessLogConfig{
-		Mode:    "tcp",
-		Host:    "als-server",
-		Port:    18090,
-		LogName: "test-log",
+	cfg.Analytics.GRPCEventServerCfg = config.GRPCEventServerConfig{
+		Mode: "tcp",
+		Port: 18090,
 	}
 	translator := NewTranslator(logger, routerCfg, nil, cfg)
 

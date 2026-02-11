@@ -312,7 +312,7 @@ func (t *Translator) TranslateConfigs(
 	clusters = append(clusters, policyEngineCluster)
 
 	// Add ALS cluster if gRPC access log is enabled
-	log.Debug("gRPC access log config", slog.Any("config", t.config.Analytics.GRPCAccessLogCfg))
+	log.Debug("gRPC event server config", slog.Any("config", t.config.Analytics.GRPCEventServerCfg))
 	if t.config.Analytics.Enabled {
 		log.Info("gRPC access log is enabled, creating ALS cluster")
 		alsCluster := t.createALSCluster()
@@ -1734,7 +1734,7 @@ func (t *Translator) createPolicyEngineCluster() *cluster.Cluster {
 
 // createALSCluster creates an Envoy cluster for the gRPC access log service
 func (t *Translator) createALSCluster() *cluster.Cluster {
-	grpcConfig := t.config.Analytics.GRPCAccessLogCfg
+	grpcConfig := t.config.Analytics.GRPCEventServerCfg
 
 	// Build the endpoint address (UDS or TCP)
 	var address *core.Address
@@ -1745,7 +1745,7 @@ func (t *Translator) createALSCluster() *cluster.Cluster {
 			Address: &core.Address_SocketAddress{
 				SocketAddress: &core.SocketAddress{
 					Protocol: core.SocketAddress_TCP,
-					Address:  grpcConfig.Host,
+					Address:  t.config.Router.PolicyEngine.Host,
 					PortSpecifier: &core.SocketAddress_PortValue{
 						PortValue: uint32(grpcConfig.Port),
 					},
@@ -2366,12 +2366,12 @@ func (t *Translator) createAccessLogConfig() ([]*accesslog.AccessLog, error) {
 
 // createGRPCAccessLog creates a gRPC access log configuration for the gateway controller
 func (t *Translator) createGRPCAccessLog() (*accesslog.AccessLog, error) {
-	grpcConfig := t.config.Analytics.GRPCAccessLogCfg
+	grpcConfig := t.config.Analytics.GRPCEventServerCfg
 
 	httpGrpcAccessLog := &grpc_accesslogv3.HttpGrpcAccessLogConfig{
 		CommonConfig: &grpc_accesslogv3.CommonGrpcAccessLogConfig{
 			TransportApiVersion: corev3.ApiVersion_V3,
-			LogName:             grpcConfig.LogName,
+			LogName:             constants.DefaultALSLogName,
 			BufferFlushInterval: durationpb.New(time.Duration(grpcConfig.BufferFlushInterval)),
 			BufferSizeBytes:     wrapperspb.UInt32(uint32(grpcConfig.BufferSizeBytes)),
 			GrpcService: &corev3.GrpcService{

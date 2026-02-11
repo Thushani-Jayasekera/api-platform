@@ -48,7 +48,7 @@ type Config struct {
 type AnalyticsConfig struct {
 	Enabled              bool                    `koanf:"enabled"`
 	Publishers           []PublisherConfig       `koanf:"publishers"`
-	GRPCAccessLogCfg     map[string]interface{}  `koanf:"grpc_access_logs"`
+	GRPCEventServerCfg   map[string]interface{}  `koanf:"grpc_event_server"`
 	AccessLogsServiceCfg AccessLogsServiceConfig `koanf:"access_logs_service"`
 	// AllowPayloads controls whether request and response bodies are captured
 	// into analytics metadata and forwarded to analytics publishers.
@@ -195,7 +195,7 @@ type LoggingConfig struct {
 // AccessLogsServiceConfig holds access logs service configuration
 type AccessLogsServiceConfig struct {
 	Mode                  string        `koanf:"mode"` // Connection mode: "uds" (default) or "tcp"
-	ALSServerPort         int           `koanf:"als_server_port"`
+	ServerPort            int           `koanf:"server_port"`
 	ShutdownTimeout       time.Duration `koanf:"shutdown_timeout"`
 	PublicKeyPath         string        `koanf:"public_key_path"`
 	PrivateKeyPath        string        `koanf:"private_key_path"`
@@ -317,17 +317,15 @@ func defaultConfig() *Config {
 					},
 				},
 			},
-			GRPCAccessLogCfg: map[string]interface{}{
-				"host":                  "policy-engine",
+			GRPCEventServerCfg: map[string]interface{}{
 				"port":                  18090,
-				"log_name":              "envoy_access_log",
 				"buffer_flush_interval": 1000000000,
 				"buffer_size_bytes":     16384,
 				"grpc_request_timeout":  20000000000,
 			},
 			AccessLogsServiceCfg: AccessLogsServiceConfig{
 				Mode:                  "", // Empty defaults to "uds"
-				ALSServerPort:         18090,
+				ServerPort:            18090,
 				ShutdownTimeout:       600 * time.Second,
 				PublicKeyPath:         "",
 				PrivateKeyPath:        "",
@@ -488,8 +486,8 @@ func (c *Config) validateAnalyticsConfig() error {
 			// UDS mode (default) - port is unused
 		case "tcp":
 			// TCP mode - validate port
-			if als.ALSServerPort <= 0 || als.ALSServerPort > 65535 {
-				return fmt.Errorf("analytics.access_logs_service.als_server_port must be between 1 and 65535, got %d", als.ALSServerPort)
+			if als.ServerPort <= 0 || als.ServerPort > 65535 {
+				return fmt.Errorf("analytics.access_logs_service.server_port must be between 1 and 65535, got %d", als.ServerPort)
 			}
 		default:
 			return fmt.Errorf("analytics.access_logs_service.mode must be 'uds' or 'tcp', got: %s", als.Mode)

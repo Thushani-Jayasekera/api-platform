@@ -28,6 +28,9 @@ const (
 	// Gateway Analytics Socket Path (matches gateway-controller constant)
 	DefaultALSSocketPath = "/var/run/api-platform/gateway-analytics.sock"
 
+	// ALS Log Name (matches gateway-controller constant)
+	DefaultALSLogName = "envoy_access_log"
+
 	// xDS Client Constants
 	// NodeID identifies this policy engine instance to the xDS server
 	XDSNodeID = "policy-engine"

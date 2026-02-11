@@ -1031,11 +1031,11 @@ func TestConfig_ValidateAnalyticsConfig(t *testing.T) {
 			name:    "Analytics enabled with valid UDS config (default mode)",
 			enabled: true,
 			setupConfig: func(cfg *Config) {
-				cfg.Analytics.GRPCAccessLogCfg.Mode = "uds"
-				cfg.Analytics.GRPCAccessLogCfg.LogName = "access_log"
-				cfg.Analytics.GRPCAccessLogCfg.BufferFlushInterval = 1000
-				cfg.Analytics.GRPCAccessLogCfg.BufferSizeBytes = 16384
-				cfg.Analytics.GRPCAccessLogCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.Mode = "uds"
+				cfg.Analytics.GRPCEventServerCfg.BufferFlushInterval = 1000
+				cfg.Analytics.GRPCEventServerCfg.BufferSizeBytes = 16384
+				cfg.Analytics.GRPCEventServerCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.ServerPort = 18090
 			},
 			wantErr: false,
 		},
@@ -1043,13 +1043,12 @@ func TestConfig_ValidateAnalyticsConfig(t *testing.T) {
 			name:    "Analytics enabled with valid TCP config",
 			enabled: true,
 			setupConfig: func(cfg *Config) {
-				cfg.Analytics.GRPCAccessLogCfg.Mode = "tcp"
-				cfg.Analytics.GRPCAccessLogCfg.Host = "localhost"
-				cfg.Analytics.GRPCAccessLogCfg.Port = 18090
-				cfg.Analytics.GRPCAccessLogCfg.LogName = "access_log"
-				cfg.Analytics.GRPCAccessLogCfg.BufferFlushInterval = 1000
-				cfg.Analytics.GRPCAccessLogCfg.BufferSizeBytes = 16384
-				cfg.Analytics.GRPCAccessLogCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.Mode = "tcp"
+				cfg.Analytics.GRPCEventServerCfg.Port = 18090
+				cfg.Analytics.GRPCEventServerCfg.BufferFlushInterval = 1000
+				cfg.Analytics.GRPCEventServerCfg.BufferSizeBytes = 16384
+				cfg.Analytics.GRPCEventServerCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.ServerPort = 18090
 			},
 			wantErr: false,
 		},
@@ -1057,11 +1056,11 @@ func TestConfig_ValidateAnalyticsConfig(t *testing.T) {
 			name:    "Analytics enabled with empty mode defaults to UDS",
 			enabled: true,
 			setupConfig: func(cfg *Config) {
-				cfg.Analytics.GRPCAccessLogCfg.Mode = ""
-				cfg.Analytics.GRPCAccessLogCfg.LogName = "access_log"
-				cfg.Analytics.GRPCAccessLogCfg.BufferFlushInterval = 1000
-				cfg.Analytics.GRPCAccessLogCfg.BufferSizeBytes = 16384
-				cfg.Analytics.GRPCAccessLogCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.Mode = ""
+				cfg.Analytics.GRPCEventServerCfg.BufferFlushInterval = 1000
+				cfg.Analytics.GRPCEventServerCfg.BufferSizeBytes = 16384
+				cfg.Analytics.GRPCEventServerCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.ServerPort = 18090
 			},
 			wantErr: false,
 		},
@@ -1069,68 +1068,52 @@ func TestConfig_ValidateAnalyticsConfig(t *testing.T) {
 			name:    "Invalid mode value",
 			enabled: true,
 			setupConfig: func(cfg *Config) {
-				cfg.Analytics.GRPCAccessLogCfg.Mode = "invalid"
-				cfg.Analytics.GRPCAccessLogCfg.LogName = "access_log"
-				cfg.Analytics.GRPCAccessLogCfg.BufferFlushInterval = 1000
-				cfg.Analytics.GRPCAccessLogCfg.BufferSizeBytes = 16384
-				cfg.Analytics.GRPCAccessLogCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.Mode = "invalid"
+				cfg.Analytics.GRPCEventServerCfg.BufferFlushInterval = 1000
+				cfg.Analytics.GRPCEventServerCfg.BufferSizeBytes = 16384
+				cfg.Analytics.GRPCEventServerCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.ServerPort = 18090
 			},
 			wantErr:     true,
-			errContains: "grpc_access_logs.mode must be 'uds' or 'tcp'",
-		},
-		{
-			name:    "TCP mode - missing host",
-			enabled: true,
-			setupConfig: func(cfg *Config) {
-				cfg.Analytics.GRPCAccessLogCfg.Mode = "tcp"
-				cfg.Analytics.GRPCAccessLogCfg.Host = ""
-				cfg.Analytics.GRPCAccessLogCfg.Port = 18090
-				cfg.Analytics.GRPCAccessLogCfg.LogName = "access_log"
-				cfg.Analytics.GRPCAccessLogCfg.BufferFlushInterval = 1000
-				cfg.Analytics.GRPCAccessLogCfg.BufferSizeBytes = 16384
-				cfg.Analytics.GRPCAccessLogCfg.GRPCRequestTimeout = 5000
-			},
-			wantErr:     true,
-			errContains: "grpc_access_logs.host is required when mode is tcp",
+			errContains: "grpc_event_server.mode must be 'uds' or 'tcp'",
 		},
 		{
 			name:    "TCP mode - invalid port",
 			enabled: true,
 			setupConfig: func(cfg *Config) {
-				cfg.Analytics.GRPCAccessLogCfg.Mode = "tcp"
-				cfg.Analytics.GRPCAccessLogCfg.Host = "localhost"
-				cfg.Analytics.GRPCAccessLogCfg.Port = 0
-				cfg.Analytics.GRPCAccessLogCfg.LogName = "access_log"
-				cfg.Analytics.GRPCAccessLogCfg.BufferFlushInterval = 1000
-				cfg.Analytics.GRPCAccessLogCfg.BufferSizeBytes = 16384
-				cfg.Analytics.GRPCAccessLogCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.Mode = "tcp"
+				cfg.Analytics.GRPCEventServerCfg.Port = 0
+				cfg.Analytics.GRPCEventServerCfg.BufferFlushInterval = 1000
+				cfg.Analytics.GRPCEventServerCfg.BufferSizeBytes = 16384
+				cfg.Analytics.GRPCEventServerCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.ServerPort = 18090
 			},
 			wantErr:     true,
-			errContains: "grpc_access_logs.port must be between 1 and 65535",
+			errContains: "grpc_event_server.port must be between 1 and 65535",
 		},
 		{
-			name:    "Missing gRPC log name",
+			name:    "Invalid server port",
 			enabled: true,
 			setupConfig: func(cfg *Config) {
-				cfg.Analytics.GRPCAccessLogCfg.Mode = "uds"
-				cfg.Analytics.GRPCAccessLogCfg.LogName = ""
-				cfg.Analytics.GRPCAccessLogCfg.BufferFlushInterval = 1000
-				cfg.Analytics.GRPCAccessLogCfg.BufferSizeBytes = 16384
-				cfg.Analytics.GRPCAccessLogCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.Mode = "uds"
+				cfg.Analytics.GRPCEventServerCfg.BufferFlushInterval = 1000
+				cfg.Analytics.GRPCEventServerCfg.BufferSizeBytes = 16384
+				cfg.Analytics.GRPCEventServerCfg.GRPCRequestTimeout = 5000
+				cfg.Analytics.GRPCEventServerCfg.ServerPort = 0
 			},
 			wantErr:     true,
-			errContains: "grpc_access_logs.log_name is required",
+			errContains: "grpc_event_server.server_port must be between 1 and 65535",
 		},
 		{
 			name:    "Invalid buffer flush interval",
 			enabled: true,
 			setupConfig: func(cfg *Config) {
-				cfg.Analytics.GRPCAccessLogCfg.Mode = "uds"
-				cfg.Analytics.GRPCAccessLogCfg.LogName = "access_log"
-				cfg.Analytics.GRPCAccessLogCfg.BufferFlushInterval = 0
+				cfg.Analytics.GRPCEventServerCfg.Mode = "uds"
+				cfg.Analytics.GRPCEventServerCfg.BufferFlushInterval = 0
+				cfg.Analytics.GRPCEventServerCfg.ServerPort = 18090
 			},
 			wantErr:     true,
-			errContains: "invalid gRPC access log configuration",
+			errContains: "invalid gRPC event server configuration",
 		},
 	}
 

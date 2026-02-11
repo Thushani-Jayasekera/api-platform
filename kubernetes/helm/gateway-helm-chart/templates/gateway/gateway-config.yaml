@@ -160,23 +160,19 @@ data:
     {{- end }}
     {{- end }}
     {{- end }}
-    {{- if .Values.gateway.config.analytics.grpc_access_logs }}
-    [analytics.grpc_access_logs]
+    {{- if .Values.gateway.config.analytics.grpc_event_server }}
+    [analytics.grpc_event_server]
     host = "127.0.0.1"
-    log_name = {{ .Values.gateway.config.analytics.grpc_access_logs.log_name | quote }}
-    buffer_flush_interval = {{ .Values.gateway.config.analytics.grpc_access_logs.buffer_flush_interval | quote }}
-    buffer_size_bytes = {{ .Values.gateway.config.analytics.grpc_access_logs.buffer_size_bytes }}
-    grpc_request_timeout = {{ .Values.gateway.config.analytics.grpc_access_logs.grpc_request_timeout | quote }}
-    {{- end }}
-    {{- if .Values.gateway.config.analytics.access_logs_service }}
-    [analytics.access_logs_service]
-    als_server_port = {{ .Values.gateway.config.analytics.access_logs_service.als_server_port }}
-    shutdown_timeout = {{ .Values.gateway.config.analytics.access_logs_service.shutdown_timeout | quote }}
-    public_key_path = {{ .Values.gateway.config.analytics.access_logs_service.public_key_path | quote }}
-    private_key_path = {{ .Values.gateway.config.analytics.access_logs_service.private_key_path | quote }}
-    als_plain_text = {{ .Values.gateway.config.analytics.access_logs_service.als_plain_text }}
-    max_message_size = {{ .Values.gateway.config.analytics.access_logs_service.max_message_size }}
-    max_header_limit = {{ .Values.gateway.config.analytics.access_logs_service.max_header_limit }}
+    buffer_flush_interval = {{ .Values.gateway.config.analytics.grpc_event_server.buffer_flush_interval | quote }}
+    buffer_size_bytes = {{ .Values.gateway.config.analytics.grpc_event_server.buffer_size_bytes }}
+    grpc_request_timeout = {{ .Values.gateway.config.analytics.grpc_event_server.grpc_request_timeout | quote }}
+    server_port = {{ .Values.gateway.config.analytics.grpc_event_server.server_port }}
+    shutdown_timeout = {{ .Values.gateway.config.analytics.grpc_event_server.shutdown_timeout | quote }}
+    public_key_path = {{ .Values.gateway.config.analytics.grpc_event_server.public_key_path | quote }}
+    private_key_path = {{ .Values.gateway.config.analytics.grpc_event_server.private_key_path | quote }}
+    als_plain_text = {{ .Values.gateway.config.analytics.grpc_event_server.als_plain_text }}
+    max_message_size = {{ .Values.gateway.config.analytics.grpc_event_server.max_message_size }}
+    max_header_limit = {{ .Values.gateway.config.analytics.grpc_event_server.max_header_limit }}
     {{- end }}
     {{- end }}
 

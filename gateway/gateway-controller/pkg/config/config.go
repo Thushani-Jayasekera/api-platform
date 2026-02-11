@@ -53,22 +53,28 @@ type Config struct {
 
 // AnalyticsConfig holds analytics configuration
 type AnalyticsConfig struct {
-	Enabled          bool                `koanf:"enabled"`
-	GRPCAccessLogCfg GRPCAccessLogConfig `koanf:"grpc_access_logs"`
+	Enabled            bool                     `koanf:"enabled"`
+	Publishers         []map[string]interface{} `koanf:"publishers"`
+	GRPCEventServerCfg GRPCEventServerConfig    `koanf:"grpc_event_server"`
 	// AllowPayloads controls whether request and response bodies are captured
 	// into analytics metadata and forwarded to analytics publishers.
 	AllowPayloads bool `koanf:"allow_payloads"`
 }
 
-// AccessLogsServiceConfig holds the access logs service configuration
-type AccessLogsServiceConfig struct {
-	ALSServerPort   int           `koanf:"als_server_port"`
-	ShutdownTimeout time.Duration `koanf:"shutdown_timeout"`
-	PublicKeyPath   string        `koanf:"public_key_path"`
-	PrivateKeyPath  string        `koanf:"private_key_path"`
-	ALSPlainText    bool          `koanf:"als_plain_text"`
-	MaxMessageSize  int           `koanf:"max_message_size"`
-	MaxHeaderLimit  int           `koanf:"max_header_limit"`
+// GRPCEventServerConfig holds configuration for gRPC event server (combines access log service and ALS server config)
+type GRPCEventServerConfig struct {
+	Mode                string        `koanf:"mode"`                  // Connection mode: "uds" (default) or "tcp"
+	Port                int           `koanf:"port"`                  // ALS port for Envoy connection (TCP mode only)
+	ServerPort          int           `koanf:"server_port"`           // gRPC server port for ALS server
+	BufferFlushInterval int           `koanf:"buffer_flush_interval"` // Envoy buffer flush interval (nanoseconds)
+	BufferSizeBytes     int           `koanf:"buffer_size_bytes"`     // Envoy buffer size
+	GRPCRequestTimeout  int           `koanf:"grpc_request_timeout"`  // Envoy gRPC timeout (nanoseconds)
+	ShutdownTimeout     time.Duration `koanf:"shutdown_timeout"`      // ALS server shutdown timeout
+	PublicKeyPath       string        `koanf:"public_key_path"`       // TLS public key path
+	PrivateKeyPath      string        `koanf:"private_key_path"`      // TLS private key path
+	ALSPlainText        bool          `koanf:"als_plain_text"`        // Use plaintext gRPC
+	MaxMessageSize      int           `koanf:"max_message_size"`      // Max gRPC message size
+	MaxHeaderLimit      int           `koanf:"max_header_limit"`      // Max header size
 }
 
 // Controller holds the main configuration sections for the gateway-controller
@@ -336,17 +342,6 @@ type AccessLogsConfig struct {
 	Format     string            `koanf:"format"`      // "json" or "text"
 	JSONFields map[string]string `koanf:"json_fields"` // JSON log format fields
 	TextFormat string            `koanf:"text_format"` // Text log format template
-}
-
-// GRPCAccessLogConfig holds configuration for gRPC Access Log Service
-type GRPCAccessLogConfig struct {
-	Mode                string `koanf:"mode"` // Connection mode: "uds" (default) or "tcp"
-	Host                string `koanf:"host"` // ALS hostname/IP (TCP mode only)
-	Port                int    `koanf:"port"` // ALS port (TCP mode only)
-	LogName             string `koanf:"log_name"`
-	BufferFlushInterval int    `koanf:"buffer_flush_interval"`
-	BufferSizeBytes     int    `koanf:"buffer_size_bytes"`
-	GRPCRequestTimeout  int    `koanf:"grpc_request_timeout"`
 }
 
 // LoggingConfig holds logging configuration
@@ -617,14 +612,33 @@ func defaultConfig() *Config {
 		},
 		Analytics: AnalyticsConfig{
 			Enabled: false,
-			GRPCAccessLogCfg: GRPCAccessLogConfig{
-				Mode:                "uds",           // UDS mode by default
-				Host:                "policy-engine", // Only used in TCP mode
-				Port:                18090,           // Only used in TCP mode
-				LogName:             "envoy_access_log",
-				BufferFlushInterval: 1000000000,
-				BufferSizeBytes:     16384,
-				GRPCRequestTimeout:  20000000000,
+			Publishers: []map[string]interface{}{
+				{
+					"type":    "moesif",
+					"enabled": true,
+					"settings": map[string]interface{}{
+						"application_id":       "",
+						"moesif_base_url":      "https://api.moesif.net",
+						"publish_interval":     5,
+						"event_queue_size":     10000,
+						"batch_size":           50,
+						"timer_wakeup_seconds": 3,
+					},
+				},
+			},
+			GRPCEventServerCfg: GRPCEventServerConfig{
+				Mode:                "uds",       // UDS mode by default
+				Port:                18090,       // Only used in TCP mode
+				ServerPort:          18090,       // ALS server port
+				BufferFlushInterval: 1000000000,  // 1 second
+				BufferSizeBytes:     16384,       // 16 KiB
+				GRPCRequestTimeout:  20000000000, // 20 seconds
+				ShutdownTimeout:     600 * time.Second,
+				PublicKeyPath:       "",
+				PrivateKeyPath:      "",
+				ALSPlainText:        true,
+				MaxMessageSize:      1000000000,
+				MaxHeaderLimit:      8192,
 			},
 			AllowPayloads: false,
 		},
@@ -1271,37 +1285,36 @@ func validateDomains(field string, domains []string) error {
 func (c *Config) validateAnalyticsConfig() error {
 	// Validate analytics configuration
 	if c.Analytics.Enabled {
-		// Validate gRPC access log configuration
-		grpcAccessLogCfg := c.Analytics.GRPCAccessLogCfg
+		// Validate gRPC event server configuration
+		grpcEventServerCfg := c.Analytics.GRPCEventServerCfg
 
-		// Validate ALS connection mode
-		switch grpcAccessLogCfg.Mode {
+		// Validate connection mode
+		switch grpcEventServerCfg.Mode {
 		case "uds", "":
-			// UDS mode (default) - host/port are unused
+			// UDS mode (default) - port is unused for Envoy connection
 		case "tcp":
-			// TCP mode - validate host and port
-			if grpcAccessLogCfg.Host == "" {
-				return fmt.Errorf("analytics.grpc_access_logs.host is required when mode is tcp")
-			}
-			if grpcAccessLogCfg.Port <= 0 || grpcAccessLogCfg.Port > 65535 {
-				return fmt.Errorf("analytics.grpc_access_logs.port must be between 1 and 65535 when mode is tcp, got %d", grpcAccessLogCfg.Port)
+			// TCP mode - validate port (host is derived from policy_engine.host)
+			if grpcEventServerCfg.Port <= 0 || grpcEventServerCfg.Port > 65535 {
+				return fmt.Errorf("analytics.grpc_event_server.port must be between 1 and 65535 when mode is tcp, got %d", grpcEventServerCfg.Port)
 			}
 		default:
-			return fmt.Errorf("analytics.grpc_access_logs.mode must be 'uds' or 'tcp', got: %s", grpcAccessLogCfg.Mode)
+			return fmt.Errorf("analytics.grpc_event_server.mode must be 'uds' or 'tcp', got: %s", grpcEventServerCfg.Mode)
 		}
 
-		if grpcAccessLogCfg.LogName == "" {
-			return fmt.Errorf("analytics.grpc_access_logs.log_name is required when analytics.enabled is true")
-		}
-		if grpcAccessLogCfg.BufferFlushInterval <= 0 || grpcAccessLogCfg.BufferSizeBytes <= 0 || grpcAccessLogCfg.GRPCRequestTimeout <= 0 {
+		// Validate buffer and timeout settings
+		if grpcEventServerCfg.BufferFlushInterval <= 0 || grpcEventServerCfg.BufferSizeBytes <= 0 || grpcEventServerCfg.GRPCRequestTimeout <= 0 {
 			return fmt.Errorf(
-				"invalid gRPC access log configuration: bufferFlushInterval=%d, bufferSizeBytes=%d, grpcRequestTimeout=%d (all must be > 0)",
-				grpcAccessLogCfg.BufferFlushInterval,
-				grpcAccessLogCfg.BufferSizeBytes,
-				grpcAccessLogCfg.GRPCRequestTimeout,
+				"invalid gRPC event server configuration: bufferFlushInterval=%d, bufferSizeBytes=%d, grpcRequestTimeout=%d (all must be > 0)",
+				grpcEventServerCfg.BufferFlushInterval,
+				grpcEventServerCfg.BufferSizeBytes,
+				grpcEventServerCfg.GRPCRequestTimeout,
 			)
 		}
 
+		// Validate server port
+		if grpcEventServerCfg.ServerPort <= 0 || grpcEventServerCfg.ServerPort > 65535 {
+			return fmt.Errorf("analytics.grpc_event_server.server_port must be between 1 and 65535, got %d", grpcEventServerCfg.ServerPort)
+		}
 	}
 	return nil
 }
