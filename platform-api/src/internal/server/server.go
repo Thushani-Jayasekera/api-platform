@@ -141,7 +141,7 @@ func StartPlatformAPIServer(cfg *config.Server) (*Server, error) {
 		HeartbeatTimeout:     time.Duration(cfg.WebSocket.ConnectionTimeout) * time.Second,
 		MaxConnectionsPerOrg: cfg.WebSocket.MaxConnectionsPerOrg,
 	}
-	wsManager := websocket.NewManager(wsConfig)
+	wsManager := websocket.NewManager(wsConfig, gatewayRepo)
 
 	// Initialize utilities
 	apiUtil := &utils.APIUtil{}

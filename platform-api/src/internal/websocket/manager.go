@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	"platform-api/src/internal/repository"
+
 	"github.com/google/uuid"
 )
 
@@ -55,6 +57,9 @@ type Manager struct {
 
 	// maxConnectionsPerOrg enforces per-organization connection limits
 	maxConnectionsPerOrg int
+
+	// gatewayRepo provides access to gateway data for org-scoped connection counting
+	gatewayRepo repository.GatewayRepository
 
 	// shutdownCtx is used to signal graceful shutdown to all connection goroutines
 	shutdownCtx context.Context
@@ -89,7 +94,7 @@ func DefaultManagerConfig() ManagerConfig {
 }
 
 // NewManager creates a new connection manager with the provided configuration
-func NewManager(config ManagerConfig) *Manager {
+func NewManager(config ManagerConfig, gatewayRepo repository.GatewayRepository) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
 		connections:          sync.Map{},
@@ -98,6 +103,7 @@ func NewManager(config ManagerConfig) *Manager {
 		heartbeatInterval:    config.HeartbeatInterval,
 		heartbeatTimeout:     config.HeartbeatTimeout,
 		maxConnectionsPerOrg: config.MaxConnectionsPerOrg,
+		gatewayRepo:          gatewayRepo,
 		shutdownCtx:          ctx,
 		shutdownFn:           cancel,
 	}
@@ -244,18 +250,21 @@ func (m *Manager) GetConnectionCount() int {
 }
 
 // countOrgConnections counts the number of connections for a specific organization
-// by iterating through the main connections map.
+// by fetching the org's gateways and only counting connections for those gateway IDs.
 func (m *Manager) countOrgConnections(orgID string) int {
+	gateways, err := m.gatewayRepo.GetByOrganizationID(orgID)
+	if err != nil {
+		log.Printf("[ERROR] Failed to fetch gateways for org: orgID=%s error=%v", orgID, err)
+		return 0
+	}
+
 	count := 0
-	m.connections.Range(func(key, value interface{}) bool {
-		conns := value.([]*Connection)
-		for _, conn := range conns {
-			if conn.OrganizationID == orgID {
-				count++
-			}
+	for _, gw := range gateways {
+		if connsInterface, ok := m.connections.Load(gw.ID); ok {
+			conns := connsInterface.([]*Connection)
+			count += len(conns)
 		}
-		return true
-	})
+	}
 	return count
 }
 
@@ -347,19 +356,6 @@ func (m *Manager) GetOrgConnectionStats(orgID string) OrgConnectionStats {
 		CurrentCount:   m.countOrgConnections(orgID),
 		MaxAllowed:     m.maxConnectionsPerOrg,
 	}
-}
-
-// GetAllOrgConnectionStats returns connection counts for all organizations
-func (m *Manager) GetAllOrgConnectionStats() map[string]int {
-	result := make(map[string]int)
-	m.connections.Range(func(key, value interface{}) bool {
-		conns := value.([]*Connection)
-		for _, conn := range conns {
-			result[conn.OrganizationID]++
-		}
-		return true
-	})
-	return result
 }
 
 // CanAcceptOrgConnection checks if the organization can accept a new connection
