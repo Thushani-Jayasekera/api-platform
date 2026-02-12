@@ -710,8 +710,7 @@ func TestNewConfigLoader(t *testing.T) {
 		Routes: make(map[string]*registry.PolicyChain),
 	}
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	loader := NewConfigLoader(kernel, reg)
@@ -724,8 +723,7 @@ func TestLoadFromFile_FileNotFound(t *testing.T) {
 		Routes: make(map[string]*registry.PolicyChain),
 	}
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	loader := NewConfigLoader(kernel, reg)
 
@@ -753,8 +751,7 @@ this is not valid yaml as a list
 		Routes: make(map[string]*registry.PolicyChain),
 	}
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	loader := NewConfigLoader(kernel, reg)
 
@@ -775,8 +772,7 @@ func TestLoadFromFile_EmptyFile(t *testing.T) {
 		Routes: make(map[string]*registry.PolicyChain),
 	}
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	loader := NewConfigLoader(kernel, reg)
 
@@ -798,8 +794,7 @@ func TestLoadFromFile_EmptyList(t *testing.T) {
 		Routes: make(map[string]*registry.PolicyChain),
 	}
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	loader := NewConfigLoader(kernel, reg)
 
@@ -824,8 +819,7 @@ func TestLoadFromFile_ValidationError_EmptyRouteKey(t *testing.T) {
 		Routes: make(map[string]*registry.PolicyChain),
 	}
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	loader := NewConfigLoader(kernel, reg)
 
@@ -853,8 +847,7 @@ func TestLoadFromFile_ValidationError_EmptyPolicyName(t *testing.T) {
 		Routes: make(map[string]*registry.PolicyChain),
 	}
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	loader := NewConfigLoader(kernel, reg)
 
@@ -882,8 +875,7 @@ func TestLoadFromFile_ValidationError_EmptyPolicyVersion(t *testing.T) {
 		Routes: make(map[string]*registry.PolicyChain),
 	}
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	loader := NewConfigLoader(kernel, reg)
 
@@ -911,8 +903,7 @@ func TestLoadFromFile_ValidationError_PolicyNotInRegistry(t *testing.T) {
 		Routes: make(map[string]*registry.PolicyChain),
 	}
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	loader := NewConfigLoader(kernel, reg)
 
@@ -922,9 +913,9 @@ func TestLoadFromFile_ValidationError_PolicyNotInRegistry(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown-policy")
 }
 
-func TestLoadFromFile_ValidationError_PolicyDefinitionExistsButNoFactory(t *testing.T) {
+func TestLoadFromFile_ValidationError_PolicyNotRegistered(t *testing.T) {
 	tempDir := t.TempDir()
-	configPath := filepath.Join(tempDir, "no-factory.yaml")
+	configPath := filepath.Join(tempDir, "not-registered.yaml")
 
 	// Valid config with policy name and version
 	yamlContent := `
@@ -939,20 +930,13 @@ func TestLoadFromFile_ValidationError_PolicyDefinitionExistsButNoFactory(t *test
 	kernel := &Kernel{
 		Routes: make(map[string]*registry.PolicyChain),
 	}
-	// Register definition but NOT factory
 	reg := &registry.PolicyRegistry{
-		Definitions: map[string]*policy.PolicyDefinition{
-			"test-policy:v1.0.0": {
-				Name:    "test-policy",
-				Version: "v1.0.0",
-			},
-		},
-		Factories: make(map[string]policy.PolicyFactory), // No factory registered
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	loader := NewConfigLoader(kernel, reg)
 
 	err = loader.LoadFromFile(configPath)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "factory not found")
+	assert.Contains(t, err.Error(), "policy not found")
 }

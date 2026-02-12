@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/adminserver"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/apikeyxds"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/lazyresourcexds"
 
@@ -365,6 +366,18 @@ func main() {
 	// Register API routes (includes certificate management endpoints from OpenAPI spec)
 	api.RegisterHandlers(router, apiServer)
 
+	// Start controller admin server for debug endpoints if enabled.
+	var controllerAdminServer *adminserver.Server
+	if cfg.GatewayController.AdminServer.Enabled {
+		controllerAdminServer = adminserver.NewServer(&cfg.GatewayController.AdminServer, apiServer, log)
+		go func() {
+			if err := controllerAdminServer.Start(); err != nil {
+				log.Error("Controller admin server failed", slog.Any("error", err))
+				os.Exit(1)
+			}
+		}()
+	}
+
 	// Start metrics server if enabled
 	var metricsServer *metrics.Server
 	var metricsCtxCancel context.CancelFunc
@@ -441,6 +454,12 @@ func main() {
 		}
 	}
 
+	if controllerAdminServer != nil {
+		if err := controllerAdminServer.Stop(ctx); err != nil {
+			log.Error("Failed to stop controller admin server", slog.Any("error", err))
+		}
+	}
+
 	log.Info("Gateway-Controller stopped")
 }
 
@@ -488,8 +507,6 @@ func generateAuthConfig(config *config.Config) commonmodels.AuthConfig {
 		"PUT /apis/:id/api-keys/:apiKeyName":             {"admin", "consumer"},
 		"POST /apis/:id/api-keys/:apiKeyName/regenerate": {"admin", "consumer"},
 		"DELETE /apis/:id/api-keys/:apiKeyName":          {"admin", "consumer"},
-
-		"GET /config_dump": {"admin"},
 	}
 	basicAuth := commonmodels.BasicAuth{Enabled: false}
 	idpAuth := commonmodels.IDPConfig{Enabled: false}

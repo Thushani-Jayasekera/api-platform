@@ -22,22 +22,25 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/wso2/api-platform/common/version"
 	policy "github.com/wso2/api-platform/sdk/gateway/policy/v1alpha"
 )
+
+// PolicyEntry holds a policy definition and its factory function together
+type PolicyEntry struct {
+	Definition *policy.PolicyDefinition
+	Factory    policy.PolicyFactory
+}
 
 // PolicyRegistry provides centralized policy lookup
 // THREAD-SAFETY: This registry is initialized during program startup (via init() functions)
 // before any concurrent access begins. All Register() calls must complete before the gRPC
-// server starts serving requests. After initialization, the maps are read-only and safe for
+// server starts serving requests. After initialization, the map is read-only and safe for
 // concurrent access without synchronization.
 type PolicyRegistry struct {
-	// Policy definitions indexed by "name:version" composite key
-	// Example key: "jwtValidation:v1.0.0"
-	Definitions map[string]*policy.PolicyDefinition
-
-	// Policy factory functions indexed by "name:version" composite key
-	// Factory creates policy instances with metadata, initParams, and params
-	Factories map[string]policy.PolicyFactory
+	// Policies indexed by "name:vN" composite key (major version only)
+	// Example key: "jwtValidation:v1"
+	Policies map[string]*PolicyEntry
 
 	// ConfigResolver resolves ${config} CEL expressions in systemParameters
 	ConfigResolver *ConfigResolver
@@ -51,8 +54,7 @@ var registryOnce sync.Once
 func GetRegistry() *PolicyRegistry {
 	registryOnce.Do(func() {
 		globalRegistry = &PolicyRegistry{
-			Definitions: make(map[string]*policy.PolicyDefinition),
-			Factories:   make(map[string]policy.PolicyFactory),
+			Policies: make(map[string]*PolicyEntry),
 		}
 	})
 	return globalRegistry
@@ -76,16 +78,6 @@ func mergeParams(initParams, params map[string]interface{}) map[string]interface
 	return merged
 }
 
-// GetDefinition retrieves a policy definition by name and version
-func (r *PolicyRegistry) GetDefinition(name, version string) (*policy.PolicyDefinition, error) {
-	key := compositeKey(name, version)
-	def, ok := r.Definitions[key]
-	if !ok {
-		return nil, fmt.Errorf("policy definition not found: %s", key)
-	}
-	return def, nil
-}
-
 // CreateInstance creates a new policy instance for a specific route
 // This method is called during BuildPolicyChain for each route-policy combination
 // Returns the policy instance and the merged parameters (initParams + params)
@@ -96,18 +88,13 @@ func (r *PolicyRegistry) CreateInstance(
 ) (policy.Policy, map[string]interface{}, error) {
 	key := compositeKey(name, version)
 
-	factory, ok := r.Factories[key]
+	entry, ok := r.Policies[key]
 	if !ok {
-		return nil, nil, fmt.Errorf("policy factory not found: %s", key)
-	}
-
-	def, ok := r.Definitions[key]
-	if !ok {
-		return nil, nil, fmt.Errorf("policy definition not found: %s", key)
+		return nil, nil, fmt.Errorf("policy not found: %s", key)
 	}
 
 	// Extract initParams from PolicyDefinition
-	initParams := def.SystemParameters
+	initParams := entry.Definition.SystemParameters
 	if initParams == nil {
 		initParams = make(map[string]interface{})
 	}
@@ -126,7 +113,7 @@ func (r *PolicyRegistry) CreateInstance(
 	mergedParams := mergeParams(initParams, params)
 
 	// Call factory to create instance with merged params
-	instance, err := factory(metadata, mergedParams)
+	instance, err := entry.Factory(metadata, mergedParams)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create policy instance %s: %w", key, err)
 	}
@@ -134,29 +121,36 @@ func (r *PolicyRegistry) CreateInstance(
 	return instance, mergedParams, nil
 }
 
-// GetFactory retrieves a policy factory by name and version
-// Useful for validation without creating instances
-func (r *PolicyRegistry) GetFactory(name, version string) (policy.PolicyFactory, error) {
+// PolicyExists checks if a policy with the given name and version is registered
+// (both definition and factory must exist)
+func (r *PolicyRegistry) PolicyExists(name, version string) error {
 	key := compositeKey(name, version)
-	factory, ok := r.Factories[key]
-	if !ok {
-		return nil, fmt.Errorf("policy factory not found: %s", key)
+	if _, ok := r.Policies[key]; !ok {
+		return fmt.Errorf("policy not found: %s", key)
 	}
-	return factory, nil
+	return nil
 }
 
-// Register registers a policy definition and factory function
+// Register registers a policy definition and factory function.
+// The registry key uses the major version extracted from def.Version (e.g., "jwt-auth:v1").
+// Only one version per major version can be registered.
 // This method is ONLY called during init() before any concurrent access begins. Hence no need for synchronization.
 func (r *PolicyRegistry) Register(def *policy.PolicyDefinition, factory policy.PolicyFactory) error {
-	key := compositeKey(def.Name, def.Version)
+	majorVer := version.MajorVersion(def.Version)
+	key := compositeKey(def.Name, majorVer)
 
 	// Check for duplicates
-	if _, exists := r.Definitions[key]; exists {
-		return fmt.Errorf("policy already registered: %s", key)
+	if existingEntry, exists := r.Policies[key]; exists {
+		return fmt.Errorf("duplicate policies for major version %s: attempting to register (name: %s, version: %s) but already registered (name: %s, version: %s)",
+			majorVer,
+			def.Name, def.Version,
+			existingEntry.Definition.Name, existingEntry.Definition.Version)
 	}
 
-	r.Definitions[key] = def
-	r.Factories[key] = factory
+	r.Policies[key] = &PolicyEntry{
+		Definition: def,
+		Factory:    factory,
+	}
 	return nil
 }
 
@@ -179,10 +173,9 @@ func compositeKey(name, version string) string {
 // DumpPolicies returns all registered policy definitions for debugging
 // Returns a copy of the definitions map
 func (r *PolicyRegistry) DumpPolicies() map[string]*policy.PolicyDefinition {
-	// Create a copy of the definitions map
-	dump := make(map[string]*policy.PolicyDefinition, len(r.Definitions))
-	for key, def := range r.Definitions {
-		dump[key] = def
+	dump := make(map[string]*policy.PolicyDefinition, len(r.Policies))
+	for key, entry := range r.Policies {
+		dump[key] = entry.Definition
 	}
 	return dump
 }

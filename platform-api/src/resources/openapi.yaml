@@ -607,6 +607,134 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /apis/{apiId}/api-keys:
+    post:
+      summary: Create API key
+      description: |
+        Creates a new API key for the specified API. The API key will be hashed before
+        storage and broadcasted to all gateways where the API is deployed. This endpoint
+        allows external platforms to inject API keys to hybrid gateways.
+      operationId: CreateAPIKey
+      tags:
+        - APIs
+        - API Keys
+      parameters:
+        - $ref: '#/components/parameters/apiID'
+      requestBody:
+        description: API key creation request
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAPIKeyRequest'
+      responses:
+        '201':
+          description: API key created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateAPIKeyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: Service Unavailable - No gateway connections available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /apis/{apiId}/api-keys/{keyName}:
+    put:
+      summary: Update API key
+      description: |
+        Updates an existing API key for the specified API. The new API key value will
+        be hashed before storage and broadcasted to all gateways where the API is deployed.
+        This endpoint allows external platforms to rotate API keys on hybrid gateways.
+      operationId: UpdateAPIKey
+      tags:
+        - APIs
+        - API Keys
+      parameters:
+        - $ref: '#/components/parameters/apiID'
+        - name: keyName
+          in: path
+          required: true
+          description: The unique name/identifier of the API key
+          schema:
+            type: string
+          example: "my-api-key"
+      requestBody:
+        description: API key update request
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAPIKeyRequest'
+      responses:
+        '200':
+          description: API key updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateAPIKeyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: Service Unavailable - No gateway connections available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Revoke API key
+      description: |
+        Revokes an API key for the specified API. The revocation will be broadcasted
+        to all gateways where the API is deployed. This endpoint allows external platforms
+        to revoke API keys on hybrid gateways.
+      operationId: RevokeAPIKey
+      tags:
+        - APIs
+        - API Keys
+      parameters:
+        - $ref: '#/components/parameters/apiID'
+        - name: keyName
+          in: path
+          required: true
+          description: The unique name/identifier of the API key to revoke
+          schema:
+            type: string
+          example: "my-api-key"
+      responses:
+        '204':
+          description: API key revoked successfully (no content)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: Service Unavailable - No gateway connections available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /apis/{apiId}/devportals/publish:
     post:
       summary: Publish API to DevPortal
@@ -1177,6 +1305,31 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   /gateways/{gatewayId}/tokens:
+    get:
+      summary: List active gateway tokens
+      description: |
+        Returns all active tokens for the specified gateway. Token hashes and salts are never exposed.
+        Access is validated against the organization in the JWT token.
+      operationId: listGatewayTokens
+      tags:
+        - Gateway Tokens
+      parameters:
+        - $ref: '#/components/parameters/GatewayID'
+      responses:
+        '200':
+          description: List of active tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TokenInfoResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     post:
       summary: Rotate gateway token
       description: |
@@ -2289,6 +2442,259 @@ paths:
           in: path
           required: true
           description: Unique identifier of the LLM provider
+          schema:
+            type: string
+        - name: deploymentId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the deployment to restore (must be ARCHIVED or UNDEPLOYED)
+        - name: gatewayId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the gateway (validated against deployment's bound gateway)
+      responses:
+        '200':
+          description: Deployment restored successfully. Returns the deployment with status changed to DEPLOYED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflict. Cannot restore currently deployed deployment or deployment is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /llm-proxies/{id}/deployments:
+    post:
+      summary: Create and deploy a new LLM proxy deployment
+      description: |
+        Creates an immutable deployment artifact for an LLM proxy and deploys it to a specified gateway.
+        Each deployment targets a single gateway. The proxyId parameter is the LLM proxy handle (identifier),
+        not the UUID. The deployment becomes active immediately on the target gateway.
+        Access is validated against the organization in the JWT token.
+      operationId: deployLLMProxy
+      tags:
+        - LLM Proxy Deployments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identifier of the LLM proxy
+          schema:
+            type: string
+      requestBody:
+        description: Deployment request with gateway ID, base reference, and metadata
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeployAPIRequest'
+      responses:
+        '201':
+          description: LLM proxy deployed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentResponse'
+        '400':
+          description: Bad Request. Validation errors (missing name, base, gatewayId, or invalid input)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Not Found. LLM proxy, gateway, or base deployment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    get:
+      summary: Get deployments for an LLM proxy
+      description: |
+        Retrieves all deployment artifacts for a specific LLM proxy. The proxyId parameter is the
+        LLM proxy handle (identifier), not the UUID. Supports filtering by gateway UUID and deployment status.
+        Access is validated against the organization in the JWT token.
+      operationId: getLLMProxyDeployments
+      tags:
+        - LLM Proxy Deployments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identifier of the LLM proxy
+          schema:
+            type: string
+        - $ref: '#/components/parameters/gatewayId-Q'
+        - $ref: '#/components/parameters/deploymentStatus-Q'
+      responses:
+        '200':
+          description: Deployments retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /llm-proxies/{id}/deployments/{deploymentId}:
+    get:
+      summary: Get LLM proxy deployment by ID
+      description: |
+        Retrieves metadata for a specific LLM proxy deployment artifact including status, gateway association,
+        and timestamps. Access is validated against the organization in the JWT token.
+      operationId: getLLMProxyDeployment
+      tags:
+        - LLM Proxy Deployments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identifier of the LLM proxy
+          schema:
+            type: string
+        - $ref: '#/components/parameters/deploymentId'
+      responses:
+        '200':
+          description: Deployment metadata retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      summary: Delete LLM proxy deployment
+      description: |
+        Deletes a deployment artifact. Deletion is only allowed when the deployment is in UNDEPLOYED status.
+        Access is validated against the organization in the JWT token.
+      operationId: deleteLLMProxyDeployment
+      tags:
+        - LLM Proxy Deployments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identifier of the LLM proxy
+          schema:
+            type: string
+        - $ref: '#/components/parameters/deploymentId'
+      responses:
+        '204':
+          description: Deployment deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /llm-proxies/{id}/deployments/undeploy:
+    post:
+      summary: Undeploy LLM proxy deployment from gateway
+      description: |
+        Undeploys an active LLM proxy deployment, stopping it from being served on the specified gateway.
+        The deployment artifact remains in the system with UNDEPLOYED status and can be restored later.
+        Returns the updated deployment object with status changed to UNDEPLOYED.
+
+        Both deploymentId and gatewayId are required for safety. The backend validates that the
+        deployment's bound gateway matches the provided gatewayId to prevent unintended operations.
+        Access is validated against the organization in the JWT token.
+      operationId: undeployLLMProxyDeployment
+      tags:
+        - LLM Proxy Deployments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identifier of the LLM proxy
+          schema:
+            type: string
+        - name: deploymentId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the deployment to undeploy
+        - name: gatewayId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID of the gateway (validated against deployment's bound gateway)
+      responses:
+        '200':
+          description: Deployment undeployed successfully. Returns the updated deployment with UNDEPLOYED status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /llm-proxies/{id}/deployments/restore:
+    post:
+      summary: Restore a previous LLM proxy deployment
+      description: |
+        Activates a previous deployment (ARCHIVED or UNDEPLOYED) by setting it as the current DEPLOYED version
+        on the specified gateway. This operation changes the deployment state of the LLM proxy on that gateway.
+        The target deployment must not already be in DEPLOYED status.
+
+        Both deploymentId and gatewayId are required for safety. The backend validates that the
+        deployment's bound gateway matches the provided gatewayId to prevent unintended operations.
+        Access is validated against the organization in the JWT token.
+      operationId: restoreLLMProxyDeployment
+      tags:
+        - LLM Proxy Deployments
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identifier of the LLM proxy
           schema:
             type: string
         - name: deploymentId
@@ -3501,6 +3907,143 @@ components:
     UpdateAPIRequest:
       allOf:
         - $ref: '#/components/schemas/API'
+
+    TimeUnit:
+      type: string
+      description: Time unit for API key expiration duration
+      enum:
+        - seconds
+        - minutes
+        - hours
+        - days
+        - weeks
+        - months
+      example: days
+
+    ExpirationDuration:
+      type: object
+      required:
+        - duration
+        - unit
+      properties:
+        duration:
+          type: integer
+          description: Duration value (must be positive)
+          minimum: 1
+          example: 30
+        unit:
+          $ref: '#/components/schemas/TimeUnit'
+
+    CreateAPIKeyRequest:
+      type: object
+      required:
+        - apiKey
+      properties:
+        name:
+          type: string
+          description: |
+            Unique identifier for this API key within the API (optional; if omitted,
+            generated from displayName)
+          example: "production-key-01"
+        displayName:
+          type: string
+          description: Display name of the API key
+          example: "Production API Key"
+        apiKey:
+          type: string
+          description: The plain text API key value that will be hashed before storage
+          example: "sk_example_1234567890abcdef"
+        externalRefId:
+          type: string
+          description: Optional reference ID for tracing purposes (from external platforms)
+          nullable: true
+          example: "ext-ref-12345"
+        operations:
+          type: string
+          description: |
+            Specifies which API operations this key can access. Use "*" for all operations.
+          default: "*"
+          example: "*"
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional expiration time in ISO 8601 format
+          nullable: true
+          example: "2026-12-31T23:59:59Z"
+
+    CreateAPIKeyResponse:
+      type: object
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+          description: Status of the operation
+          enum: [success, error]
+          example: success
+        message:
+          type: string
+          description: Additional details about the operation result
+          example: "API key created and broadcasted to gateways successfully"
+        keyId:
+          type: string
+          description: The internal ID generated for tracking
+          example: "production-key-01"
+
+    UpdateAPIKeyRequest:
+      type: object
+      required:
+        - apiKey
+      properties:
+        displayName:
+          type: string
+          description: Display name of the API key
+          example: "Production API Key (Updated)"
+        apiKey:
+          type: string
+          description: The new plain text API key value that will be hashed before storage
+          example: "sk_example_new1234567890abcdef"
+        externalRefId:
+          type: string
+          description: Optional reference ID for tracing purposes (from external platforms)
+          nullable: true
+          example: "ext-ref-12345"
+        operations:
+          type: string
+          description: |
+            Specifies which API operations this key can access. Use "*" for all operations.
+          default: "*"
+          example: "*"
+        expiresAt:
+          type: string
+          format: date-time
+          description: Optional expiration time in ISO 8601 format
+          nullable: true
+          example: "2027-12-31T23:59:59Z"
+        expiresIn:
+          $ref: '#/components/schemas/ExpirationDuration'
+          description: Optional expiration duration
+
+    UpdateAPIKeyResponse:
+      type: object
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+          description: Status of the operation
+          enum: [success, error]
+          example: success
+        message:
+          type: string
+          description: Additional details about the operation result
+          example: "API key updated and broadcasted to gateways successfully"
+        keyId:
+          type: string
+          description: The internal ID of the updated key
+          example: "production-key-01"
 
     Error:
       title: Error object returned

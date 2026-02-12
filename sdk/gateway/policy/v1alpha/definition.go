@@ -20,9 +20,6 @@ type PolicyDefinition struct {
 	// Each version gets its own PolicyDefinition
 	Version string `yaml:"version" json:"version"`
 
-	// Human-readable description of what this policy version does
-	Description string `yaml:"description" json:"description"`
-
 	// Parameters for THIS version
 	// Each schema defines name, type, validation rules
 	Parameters map[string]interface{} `yaml:"parameters" json:"parameters"`

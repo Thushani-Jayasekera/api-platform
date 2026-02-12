@@ -30,8 +30,7 @@ import (
 // newTestRegistry creates a fresh PolicyRegistry for testing (not using the global singleton)
 func newTestRegistry() *PolicyRegistry {
 	return &PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*PolicyEntry),
 	}
 }
 
@@ -151,11 +150,14 @@ func TestRegister(t *testing.T) {
 		err := reg.Register(def, factory)
 		require.NoError(t, err)
 
-		// Verify registration
-		assert.Len(t, reg.Definitions, 1)
-		assert.Len(t, reg.Factories, 1)
-		assert.NotNil(t, reg.Definitions["jwt-auth:v1.0.0"])
-		assert.NotNil(t, reg.Factories["jwt-auth:v1.0.0"])
+		// Verify registration uses major version as key
+		assert.Len(t, reg.Policies, 1)
+		entry := reg.Policies["jwt-auth:v1"]
+		assert.NotNil(t, entry)
+		assert.NotNil(t, entry.Definition)
+		assert.NotNil(t, entry.Factory)
+		// Definition retains original full semver
+		assert.Equal(t, "v1.0.0", entry.Definition.Version)
 	})
 
 	t.Run("duplicate registration returns error", func(t *testing.T) {
@@ -174,7 +176,23 @@ func TestRegister(t *testing.T) {
 		// Second registration should fail
 		err = reg.Register(def, factory)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "policy already registered")
+		assert.Contains(t, err.Error(), "duplicate policies")
+	})
+
+	t.Run("same major different patch is duplicate", func(t *testing.T) {
+		reg := newTestRegistry()
+
+		def1 := &policy.PolicyDefinition{Name: "jwt-auth", Version: "v1.0.0"}
+		factory1 := testutils.NewMockPolicyFactory("jwt-auth", "v1.0.0")
+		err := reg.Register(def1, factory1)
+		require.NoError(t, err)
+
+		// v1.0.1 should conflict with v1.0.0 (same major version v1)
+		def2 := &policy.PolicyDefinition{Name: "jwt-auth", Version: "v1.0.1"}
+		factory2 := testutils.NewMockPolicyFactory("jwt-auth", "v1.0.1")
+		err = reg.Register(def2, factory2)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "duplicate policies for major version v1")
 	})
 
 	t.Run("register multiple different policies", func(t *testing.T) {
@@ -197,53 +215,15 @@ func TestRegister(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		assert.Len(t, reg.Definitions, 4)
-		assert.Len(t, reg.Factories, 4)
+		assert.Len(t, reg.Policies, 4)
 	})
 }
 
-// TestGetDefinition tests the GetDefinition function
-func TestGetDefinition(t *testing.T) {
+// TestPolicyExists tests the PolicyExists function
+func TestPolicyExists(t *testing.T) {
 	reg := newTestRegistry()
 
-	// Register a policy
-	def := &policy.PolicyDefinition{
-		Name:        "jwt-auth",
-		Version:     "v1.0.0",
-		Description: "JWT Authentication Policy",
-	}
-	factory := testutils.NewMockPolicyFactory("jwt-auth", "v1.0.0")
-	err := reg.Register(def, factory)
-	require.NoError(t, err)
-
-	t.Run("get existing definition", func(t *testing.T) {
-		result, err := reg.GetDefinition("jwt-auth", "v1.0.0")
-		require.NoError(t, err)
-		assert.Equal(t, "jwt-auth", result.Name)
-		assert.Equal(t, "v1.0.0", result.Version)
-		assert.Equal(t, "JWT Authentication Policy", result.Description)
-	})
-
-	t.Run("get non-existent definition", func(t *testing.T) {
-		result, err := reg.GetDefinition("non-existent", "v1.0.0")
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "policy definition not found")
-	})
-
-	t.Run("get wrong version", func(t *testing.T) {
-		result, err := reg.GetDefinition("jwt-auth", "v2.0.0")
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "policy definition not found")
-	})
-}
-
-// TestGetFactory tests the GetFactory function
-func TestGetFactory(t *testing.T) {
-	reg := newTestRegistry()
-
-	// Register a policy
+	// Register a policy (full semver stored, but keyed by major version)
 	def := &policy.PolicyDefinition{
 		Name:    "jwt-auth",
 		Version: "v1.0.0",
@@ -252,22 +232,21 @@ func TestGetFactory(t *testing.T) {
 	err := reg.Register(def, factory)
 	require.NoError(t, err)
 
-	t.Run("get existing factory", func(t *testing.T) {
-		result, err := reg.GetFactory("jwt-auth", "v1.0.0")
-		require.NoError(t, err)
-		assert.NotNil(t, result)
-
-		// Verify factory works
-		instance, err := result(policy.PolicyMetadata{}, nil)
-		require.NoError(t, err)
-		assert.NotNil(t, instance)
+	t.Run("existing policy with major version", func(t *testing.T) {
+		err := reg.PolicyExists("jwt-auth", "v1")
+		assert.NoError(t, err)
 	})
 
-	t.Run("get non-existent factory", func(t *testing.T) {
-		result, err := reg.GetFactory("non-existent", "v1.0.0")
+	t.Run("non-existent policy", func(t *testing.T) {
+		err := reg.PolicyExists("non-existent", "v1")
 		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "policy factory not found")
+		assert.Contains(t, err.Error(), "policy not found")
+	})
+
+	t.Run("wrong version", func(t *testing.T) {
+		err := reg.PolicyExists("jwt-auth", "v2")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "policy not found")
 	})
 }
 
@@ -337,8 +316,8 @@ func TestDumpPolicies(t *testing.T) {
 
 		dump := reg.DumpPolicies()
 		assert.Len(t, dump, 2)
-		assert.NotNil(t, dump["jwt-auth:v1.0.0"])
-		assert.NotNil(t, dump["rate-limit:v1.0.0"])
+		assert.NotNil(t, dump["jwt-auth:v1"])
+		assert.NotNil(t, dump["rate-limit:v1"])
 	})
 
 	t.Run("dump returns copy not reference", func(t *testing.T) {
@@ -352,10 +331,10 @@ func TestDumpPolicies(t *testing.T) {
 		dump := reg.DumpPolicies()
 
 		// Modify the dump
-		delete(dump, "jwt-auth:v1.0.0")
+		delete(dump, "jwt-auth:v1")
 
 		// Original should be unchanged
-		assert.Len(t, reg.Definitions, 1)
+		assert.Len(t, reg.Policies, 1)
 	})
 }
 
@@ -396,7 +375,7 @@ func TestCreateInstance(t *testing.T) {
 			"audience": "my-audience",
 		}
 
-		instance, mergedParams, err := reg.CreateInstance("jwt-auth", "v1.0.0", metadata, params)
+		instance, mergedParams, err := reg.CreateInstance("jwt-auth", "v1", metadata, params)
 		require.NoError(t, err)
 		assert.NotNil(t, instance)
 		assert.NotNil(t, mergedParams)
@@ -421,7 +400,7 @@ func TestCreateInstance(t *testing.T) {
 		metadata := policy.PolicyMetadata{}
 		params := map[string]interface{}{}
 
-		instance, _, err := reg.CreateInstance("jwt-auth", "v1.0.0", metadata, params)
+		instance, _, err := reg.CreateInstance("jwt-auth", "v1", metadata, params)
 		assert.Error(t, err)
 		assert.Nil(t, instance)
 		assert.Contains(t, err.Error(), "ConfigResolver is not initialized")
@@ -435,10 +414,10 @@ func TestCreateInstance(t *testing.T) {
 		metadata := policy.PolicyMetadata{}
 		params := map[string]interface{}{}
 
-		instance, _, err := reg.CreateInstance("non-existent", "v1.0.0", metadata, params)
+		instance, _, err := reg.CreateInstance("non-existent", "v1", metadata, params)
 		assert.Error(t, err)
 		assert.Nil(t, instance)
-		assert.Contains(t, err.Error(), "policy factory not found")
+		assert.Contains(t, err.Error(), "policy not found")
 	})
 
 	t.Run("runtime params override system params", func(t *testing.T) {
@@ -467,7 +446,7 @@ func TestCreateInstance(t *testing.T) {
 			"timeout": 60, // Override the system param
 		}
 
-		instance, mergedParams, err := reg.CreateInstance("timeout", "v1.0.0", metadata, params)
+		instance, mergedParams, err := reg.CreateInstance("timeout", "v1", metadata, params)
 		require.NoError(t, err)
 		assert.NotNil(t, instance)
 		assert.Equal(t, 60, mergedParams["timeout"])
@@ -490,7 +469,7 @@ func TestCreateInstance(t *testing.T) {
 		metadata := policy.PolicyMetadata{}
 		params := map[string]interface{}{"key": "value"}
 
-		instance, mergedParams, err := reg.CreateInstance("simple", "v1.0.0", metadata, params)
+		instance, mergedParams, err := reg.CreateInstance("simple", "v1", metadata, params)
 		require.NoError(t, err)
 		assert.NotNil(t, instance)
 		assert.Equal(t, "value", mergedParams["key"])
@@ -522,7 +501,7 @@ func TestCreateInstance(t *testing.T) {
 		err = reg.Register(def, factory)
 		require.NoError(t, err)
 
-		instance, mergedParams, err := reg.CreateInstance("advanced-ratelimit", "v1.0.0", policy.PolicyMetadata{}, map[string]interface{}{})
+		instance, mergedParams, err := reg.CreateInstance("advanced-ratelimit", "v1", policy.PolicyMetadata{}, map[string]interface{}{})
 		require.NoError(t, err)
 		assert.NotNil(t, instance)
 		assert.Equal(t, "gcra", mergedParams["algorithm"])

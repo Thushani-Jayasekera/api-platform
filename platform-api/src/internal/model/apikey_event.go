@@ -17,6 +17,21 @@
 
 package model
 
+type TimeUnit string
+
+const (
+	TimeUnitSeconds TimeUnit = "seconds"
+	TimeUnitMinutes TimeUnit = "minutes"
+	TimeUnitHours   TimeUnit = "hours"
+	TimeUnitDays    TimeUnit = "days"
+	TimeUnitWeeks   TimeUnit = "weeks"
+	TimeUnitMonths  TimeUnit = "months"
+)
+type ExpiresInDuration struct {
+	Duration int    `json:"duration" yaml:"duration"`
+	Unit     TimeUnit `json:"unit" yaml:"unit"`
+}
+
 // APIKeyCreatedEvent represents the payload for "apikey.created" event type.
 // This event is sent when an external API key is registered to hybrid gateways.
 type APIKeyCreatedEvent struct {
@@ -40,6 +55,9 @@ type APIKeyCreatedEvent struct {
 
 	// ExpiresAt is the optional expiration time in ISO 8601 format
 	ExpiresAt *string `json:"expiresAt,omitempty"`
+
+	// ExpiresIn is the optional expiration duration
+	ExpiresIn *ExpiresInDuration `json:"expiresIn,omitempty"`
 }
 
 // APIKeyRevokedEvent represents the payload for "apikey.revoked" event type.
@@ -60,6 +78,18 @@ type APIKeyUpdatedEvent struct {
 
 	// KeyName is the unique name of the API key being updated
 	KeyName string `json:"keyName"`
+
+	// DisplayName is the display name of the API key
+	DisplayName string `json:"displayName,omitempty"`
+
+	// ExternalRefId is an optional reference ID for tracing purposes
+	ExternalRefId *string `json:"externalRefId,omitempty"`
+
+	// Operations specifies which API operations this key can access (default: "*")
+	Operations string `json:"operations"`
+
+	// ExpiresIn is the optional expiration duration
+	ExpiresIn *ExpiresInDuration `json:"expiresIn,omitempty"`
 
 	// ApiKey is the new plain API key value (hashing happens in the gateway)
 	ApiKey string `json:"apiKey"`
