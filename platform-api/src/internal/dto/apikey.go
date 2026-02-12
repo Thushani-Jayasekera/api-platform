@@ -19,7 +19,6 @@ package dto
 
 import (
 	"fmt"
-	"strings"
 )
 
 // TimeUnit represents allowed time units for expiration duration
@@ -36,8 +35,7 @@ const (
 
 // Validate checks that the TimeUnit has one of the allowed values (case-insensitive).
 func (t TimeUnit) Validate() error {
-	unitLower := TimeUnit(strings.ToLower(string(t)))
-	switch unitLower {
+	switch t {
 	case TimeUnitSeconds, TimeUnitMinutes, TimeUnitHours, TimeUnitDays, TimeUnitWeeks, TimeUnitMonths:
 		return nil
 	default:
