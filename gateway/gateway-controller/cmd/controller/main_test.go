@@ -334,11 +334,11 @@ func TestDerivePolicyFromAPIConfig(t *testing.T) {
 			}
 		}
 
-		// Expect two entries for MultiVersionPolicy with different resolved full versions.
+		// Expect two entries for MultiVersionPolicy with major-only versions (sent to engine as-is).
 		require.Len(t, versions, 2, "expected two MultiVersionPolicy entries in the route")
-		assert.NotEqual(t, versions[0], versions[1], "expected resolved versions for v1 and v2 majors to differ")
-		assert.Contains(t, versions, "v1.0.0", "v1 major should resolve to v1.0.0")
-		assert.Contains(t, versions, "v2.0.0", "v2 major should resolve to v2.0.0")
+		assert.NotEqual(t, versions[0], versions[1], "expected versions for v1 and v2 majors to differ")
+		assert.Contains(t, versions, "v1", "v1 major should be passed as v1")
+		assert.Contains(t, versions, "v2", "v2 major should be passed as v2")
 	})
 }
 

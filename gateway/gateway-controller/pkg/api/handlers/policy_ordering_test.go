@@ -222,7 +222,7 @@ func TestPolicyOrderingDeterministic(t *testing.T) {
 
 				// Verify policy versions for the append behavior test
 				if tt.name == "API policies with operation override" {
-					// Should have two auth policies: first from API (v1.0.0), second from operation (v2.0.0)
+					// Should have two auth policies: first from API (v1), second from operation (v2)
 					authPolicies := []string{}
 					for _, p := range result.Configuration.Routes[0].Policies {
 						if p.Name == "auth" {
@@ -230,8 +230,8 @@ func TestPolicyOrderingDeterministic(t *testing.T) {
 						}
 					}
 					require.Len(t, authPolicies, 2, "Should have two auth policies (one from API, one from operation)")
-					assert.Equal(t, "v1.0.0", authPolicies[0], "First auth should be from API level")
-					assert.Equal(t, "v2.0.0", authPolicies[1], "Second auth should be from operation level")
+					assert.Equal(t, "v1", authPolicies[0], "First auth should be from API level")
+					assert.Equal(t, "v2", authPolicies[1], "Second auth should be from operation level")
 				}
 			} else {
 				assert.Nil(t, result, "Should return nil when no policies")
@@ -367,38 +367,38 @@ func TestMultipleOperationsIndependentPolicies(t *testing.T) {
 		assert.Equal(t, expectedOrder, actualOrder,
 			"Route %s should have correct policy order", route.RouteKey)
 
-		// Verify policy versions (API policies first with v1.0.0, then operation policies with their versions)
+		// Verify policy versions (API policies first with v1, then operation policies with their major versions)
 		switch route.RouteKey {
 		case "GET|/test/resource1|localhost":
 			// Expected: auth(v1), rateLimit(v1), logging(v1), logging(v2), auth(v2)
 			require.Len(t, route.Policies, 5)
-			assert.Equal(t, "v1.0.0", route.Policies[0].Version, "First auth should be API version")
-			assert.Equal(t, "v1.0.0", route.Policies[1].Version, "rateLimit should be API version")
-			assert.Equal(t, "v1.0.0", route.Policies[2].Version, "First logging should be API version")
-			assert.Equal(t, "v2.0.0", route.Policies[3].Version, "Second logging should be operation version")
-			assert.Equal(t, "v2.0.0", route.Policies[4].Version, "Second auth should be operation version")
+			assert.Equal(t, "v1", route.Policies[0].Version, "First auth should be API version")
+			assert.Equal(t, "v1", route.Policies[1].Version, "rateLimit should be API version")
+			assert.Equal(t, "v1", route.Policies[2].Version, "First logging should be API version")
+			assert.Equal(t, "v2", route.Policies[3].Version, "Second logging should be operation version")
+			assert.Equal(t, "v2", route.Policies[4].Version, "Second auth should be operation version")
 		case "PUT|/test/resource3|localhost":
 			// Expected: auth(v1), rateLimit(v1), logging(v1), rateLimit(v3), cors
 			require.Len(t, route.Policies, 5)
-			assert.Equal(t, "v1.0.0", route.Policies[0].Version, "auth should be API version")
-			assert.Equal(t, "v1.0.0", route.Policies[1].Version, "First rateLimit should be API version")
-			assert.Equal(t, "v1.0.0", route.Policies[2].Version, "logging should be API version")
-			assert.Equal(t, "v3.0.0", route.Policies[3].Version, "Second rateLimit should be operation version")
+			assert.Equal(t, "v1", route.Policies[0].Version, "auth should be API version")
+			assert.Equal(t, "v1", route.Policies[1].Version, "First rateLimit should be API version")
+			assert.Equal(t, "v1", route.Policies[2].Version, "logging should be API version")
+			assert.Equal(t, "v3", route.Policies[3].Version, "Second rateLimit should be operation version")
 		case "DELETE|/test/resource4|localhost":
-			// Should use API versions (v1.0.0) for all
+			// Should use API versions (v1) for all
 			for _, p := range route.Policies {
-				assert.Equal(t, "v1.0.0", p.Version,
+				assert.Equal(t, "v1", p.Version,
 					"Route DELETE should use API version for %s", p.Name)
 			}
 		case "PATCH|/test/resource5|localhost":
 			// Expected: auth(v1), rateLimit(v1), logging(v1), rateLimit(v5), logging(v5), auth(v5)
 			require.Len(t, route.Policies, 6)
-			assert.Equal(t, "v1.0.0", route.Policies[0].Version, "First auth should be API version")
-			assert.Equal(t, "v1.0.0", route.Policies[1].Version, "First rateLimit should be API version")
-			assert.Equal(t, "v1.0.0", route.Policies[2].Version, "First logging should be API version")
-			assert.Equal(t, "v5.0.0", route.Policies[3].Version, "Second rateLimit should be operation version")
-			assert.Equal(t, "v5.0.0", route.Policies[4].Version, "Second logging should be operation version")
-			assert.Equal(t, "v5.0.0", route.Policies[5].Version, "Second auth should be operation version")
+			assert.Equal(t, "v1", route.Policies[0].Version, "First auth should be API version")
+			assert.Equal(t, "v1", route.Policies[1].Version, "First rateLimit should be API version")
+			assert.Equal(t, "v1", route.Policies[2].Version, "First logging should be API version")
+			assert.Equal(t, "v5", route.Policies[3].Version, "Second rateLimit should be operation version")
+			assert.Equal(t, "v5", route.Policies[4].Version, "Second logging should be operation version")
+			assert.Equal(t, "v5", route.Policies[5].Version, "Second auth should be operation version")
 		}
 	}
 

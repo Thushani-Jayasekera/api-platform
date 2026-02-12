@@ -130,7 +130,7 @@ func TestValidatePolicyChainConfig_PolicyMissingName(t *testing.T) {
 	config := &policyenginev1.PolicyChain{
 		RouteKey: "test-route",
 		Policies: []policyenginev1.PolicyInstance{
-			{Name: "", Version: "v1.0.0"},
+			{Name: "", Version: "v1"},
 		},
 	}
 
@@ -170,7 +170,7 @@ func TestValidatePolicyChainConfig_PolicyNotInRegistry(t *testing.T) {
 	config := &policyenginev1.PolicyChain{
 		RouteKey: "test-route",
 		Policies: []policyenginev1.PolicyInstance{
-			{Name: "nonexistent-policy", Version: "v1.0.0"},
+			{Name: "nonexistent-policy", Version: "v1"},
 		},
 	}
 
@@ -360,7 +360,7 @@ func TestHandlePolicyChainUpdate_RouteWithInvalidPolicy(t *testing.T) {
 					"policies": []interface{}{
 						map[string]interface{}{
 							"name":       "nonexistent-policy",
-							"version":    "v1.0.0",
+							"version":    "v1",
 							"enabled":    true,
 							"parameters": map[string]interface{}{},
 						},
@@ -487,7 +487,7 @@ func TestBuildPolicyChain_UnknownPolicy(t *testing.T) {
 		Policies: []policyenginev1.PolicyInstance{
 			{
 				Name:    "unknown-policy",
-				Version: "v1.0.0",
+				Version: "v1",
 				Enabled: true,
 			},
 		},

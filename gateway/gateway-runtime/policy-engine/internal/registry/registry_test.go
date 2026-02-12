@@ -150,12 +150,14 @@ func TestRegister(t *testing.T) {
 		err := reg.Register(def, factory)
 		require.NoError(t, err)
 
-		// Verify registration
+		// Verify registration uses major version as key
 		assert.Len(t, reg.Policies, 1)
-		entry := reg.Policies["jwt-auth:v1.0.0"]
+		entry := reg.Policies["jwt-auth:v1"]
 		assert.NotNil(t, entry)
 		assert.NotNil(t, entry.Definition)
 		assert.NotNil(t, entry.Factory)
+		// Definition retains original full semver
+		assert.Equal(t, "v1.0.0", entry.Definition.Version)
 	})
 
 	t.Run("duplicate registration returns error", func(t *testing.T) {
@@ -174,7 +176,23 @@ func TestRegister(t *testing.T) {
 		// Second registration should fail
 		err = reg.Register(def, factory)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "policy already registered")
+		assert.Contains(t, err.Error(), "duplicate policies")
+	})
+
+	t.Run("same major different patch is duplicate", func(t *testing.T) {
+		reg := newTestRegistry()
+
+		def1 := &policy.PolicyDefinition{Name: "jwt-auth", Version: "v1.0.0"}
+		factory1 := testutils.NewMockPolicyFactory("jwt-auth", "v1.0.0")
+		err := reg.Register(def1, factory1)
+		require.NoError(t, err)
+
+		// v1.0.1 should conflict with v1.0.0 (same major version v1)
+		def2 := &policy.PolicyDefinition{Name: "jwt-auth", Version: "v1.0.1"}
+		factory2 := testutils.NewMockPolicyFactory("jwt-auth", "v1.0.1")
+		err = reg.Register(def2, factory2)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "duplicate policies for major version v1")
 	})
 
 	t.Run("register multiple different policies", func(t *testing.T) {
@@ -205,7 +223,7 @@ func TestRegister(t *testing.T) {
 func TestPolicyExists(t *testing.T) {
 	reg := newTestRegistry()
 
-	// Register a policy
+	// Register a policy (full semver stored, but keyed by major version)
 	def := &policy.PolicyDefinition{
 		Name:    "jwt-auth",
 		Version: "v1.0.0",
@@ -214,21 +232,21 @@ func TestPolicyExists(t *testing.T) {
 	err := reg.Register(def, factory)
 	require.NoError(t, err)
 
-	t.Run("existing policy", func(t *testing.T) {
-		err := reg.PolicyExists("jwt-auth", "v1.0.0")
+	t.Run("existing policy with major version", func(t *testing.T) {
+		err := reg.PolicyExists("jwt-auth", "v1")
 		assert.NoError(t, err)
 	})
 
 	t.Run("non-existent policy", func(t *testing.T) {
-		err := reg.PolicyExists("non-existent", "v1.0.0")
+		err := reg.PolicyExists("non-existent", "v1")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "policy definition not found")
+		assert.Contains(t, err.Error(), "policy not found")
 	})
 
 	t.Run("wrong version", func(t *testing.T) {
-		err := reg.PolicyExists("jwt-auth", "v2.0.0")
+		err := reg.PolicyExists("jwt-auth", "v2")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "policy definition not found")
+		assert.Contains(t, err.Error(), "policy not found")
 	})
 }
 
@@ -298,8 +316,8 @@ func TestDumpPolicies(t *testing.T) {
 
 		dump := reg.DumpPolicies()
 		assert.Len(t, dump, 2)
-		assert.NotNil(t, dump["jwt-auth:v1.0.0"])
-		assert.NotNil(t, dump["rate-limit:v1.0.0"])
+		assert.NotNil(t, dump["jwt-auth:v1"])
+		assert.NotNil(t, dump["rate-limit:v1"])
 	})
 
 	t.Run("dump returns copy not reference", func(t *testing.T) {
@@ -313,7 +331,7 @@ func TestDumpPolicies(t *testing.T) {
 		dump := reg.DumpPolicies()
 
 		// Modify the dump
-		delete(dump, "jwt-auth:v1.0.0")
+		delete(dump, "jwt-auth:v1")
 
 		// Original should be unchanged
 		assert.Len(t, reg.Policies, 1)
@@ -357,7 +375,7 @@ func TestCreateInstance(t *testing.T) {
 			"audience": "my-audience",
 		}
 
-		instance, mergedParams, err := reg.CreateInstance("jwt-auth", "v1.0.0", metadata, params)
+		instance, mergedParams, err := reg.CreateInstance("jwt-auth", "v1", metadata, params)
 		require.NoError(t, err)
 		assert.NotNil(t, instance)
 		assert.NotNil(t, mergedParams)
@@ -382,7 +400,7 @@ func TestCreateInstance(t *testing.T) {
 		metadata := policy.PolicyMetadata{}
 		params := map[string]interface{}{}
 
-		instance, _, err := reg.CreateInstance("jwt-auth", "v1.0.0", metadata, params)
+		instance, _, err := reg.CreateInstance("jwt-auth", "v1", metadata, params)
 		assert.Error(t, err)
 		assert.Nil(t, instance)
 		assert.Contains(t, err.Error(), "ConfigResolver is not initialized")
@@ -396,10 +414,10 @@ func TestCreateInstance(t *testing.T) {
 		metadata := policy.PolicyMetadata{}
 		params := map[string]interface{}{}
 
-		instance, _, err := reg.CreateInstance("non-existent", "v1.0.0", metadata, params)
+		instance, _, err := reg.CreateInstance("non-existent", "v1", metadata, params)
 		assert.Error(t, err)
 		assert.Nil(t, instance)
-		assert.Contains(t, err.Error(), "policy factory not found")
+		assert.Contains(t, err.Error(), "policy not found")
 	})
 
 	t.Run("runtime params override system params", func(t *testing.T) {
@@ -428,7 +446,7 @@ func TestCreateInstance(t *testing.T) {
 			"timeout": 60, // Override the system param
 		}
 
-		instance, mergedParams, err := reg.CreateInstance("timeout", "v1.0.0", metadata, params)
+		instance, mergedParams, err := reg.CreateInstance("timeout", "v1", metadata, params)
 		require.NoError(t, err)
 		assert.NotNil(t, instance)
 		assert.Equal(t, 60, mergedParams["timeout"])
@@ -451,7 +469,7 @@ func TestCreateInstance(t *testing.T) {
 		metadata := policy.PolicyMetadata{}
 		params := map[string]interface{}{"key": "value"}
 
-		instance, mergedParams, err := reg.CreateInstance("simple", "v1.0.0", metadata, params)
+		instance, mergedParams, err := reg.CreateInstance("simple", "v1", metadata, params)
 		require.NoError(t, err)
 		assert.NotNil(t, instance)
 		assert.Equal(t, "value", mergedParams["key"])
@@ -483,7 +501,7 @@ func TestCreateInstance(t *testing.T) {
 		err = reg.Register(def, factory)
 		require.NoError(t, err)
 
-		instance, mergedParams, err := reg.CreateInstance("advanced-ratelimit", "v1.0.0", policy.PolicyMetadata{}, map[string]interface{}{})
+		instance, mergedParams, err := reg.CreateInstance("advanced-ratelimit", "v1", policy.PolicyMetadata{}, map[string]interface{}{})
 		require.NoError(t, err)
 		assert.NotNil(t, instance)
 		assert.Equal(t, "gcra", mergedParams["algorithm"])

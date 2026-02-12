@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/wso2/api-platform/common/version"
 	policy "github.com/wso2/api-platform/sdk/gateway/policy/v1alpha"
 )
 
@@ -37,8 +38,8 @@ type PolicyEntry struct {
 // server starts serving requests. After initialization, the map is read-only and safe for
 // concurrent access without synchronization.
 type PolicyRegistry struct {
-	// Policies indexed by "name:version" composite key
-	// Example key: "jwtValidation:v1.0.0"
+	// Policies indexed by "name:vN" composite key (major version only)
+	// Example key: "jwtValidation:v1"
 	Policies map[string]*PolicyEntry
 
 	// ConfigResolver resolves ${config} CEL expressions in systemParameters
@@ -130,14 +131,18 @@ func (r *PolicyRegistry) PolicyExists(name, version string) error {
 	return nil
 }
 
-// Register registers a policy definition and factory function
+// Register registers a policy definition and factory function.
+// The registry key uses the major version extracted from def.Version (e.g., "jwt-auth:v1").
+// Only one version per major version can be registered.
 // This method is ONLY called during init() before any concurrent access begins. Hence no need for synchronization.
 func (r *PolicyRegistry) Register(def *policy.PolicyDefinition, factory policy.PolicyFactory) error {
-	key := compositeKey(def.Name, def.Version)
+	majorVer := version.MajorVersion(def.Version)
+	key := compositeKey(def.Name, majorVer)
 
 	// Check for duplicates
 	if existingEntry, exists := r.Policies[key]; exists {
-		return fmt.Errorf("duplicate policies: attempting to register (name: %s, version: %s) but already registered (name: %s, version: %s)",
+		return fmt.Errorf("duplicate policies for major version %s: attempting to register (name: %s, version: %s) but already registered (name: %s, version: %s)",
+			majorVer,
 			def.Name, def.Version,
 			existingEntry.Definition.Name, existingEntry.Definition.Version)
 	}
