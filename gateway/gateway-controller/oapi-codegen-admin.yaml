@@ -1,0 +1,8 @@
+package: adminapi
+output: pkg/adminapi/generated/generated.go
+generate:
+  gin-server: false
+  models: true
+  embedded-spec: true
+output-options:
+  yaml-tags: true

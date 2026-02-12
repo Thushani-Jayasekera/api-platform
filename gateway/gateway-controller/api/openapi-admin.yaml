@@ -1,0 +1,189 @@
+openapi: 3.0.3
+info:
+  title: Gateway Controller Admin API
+  description: |
+    Admin/debug API for Gateway Controller.
+
+    These endpoints are served on the dedicated admin server port (default: 9092).
+  version: 1.0.0
+  contact:
+    name: WSO2 API Platform Team
+servers:
+  - url: http://localhost:9092
+    description: Local development admin server
+  - url: http://gateway-controller:9092
+    description: Docker/Kubernetes admin server
+
+paths:
+  /config_dump:
+    get:
+      summary: Dump current configuration state
+      description: |
+        Retrieve the complete current state of the Gateway Controller including:
+        - All deployed API configurations
+        - All loaded policy definitions
+        - All registered certificates
+        - System status and metadata
+      operationId: getConfigDump
+      tags:
+        - System
+      responses:
+        "200":
+          description: Complete configuration dump
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigDumpResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /xds_sync_status:
+    get:
+      summary: Get xDS policy sync status
+      description: |
+        Returns the current policy chain xDS version produced by the gateway controller.
+      operationId: getXDSSyncStatus
+      tags:
+        - System
+      responses:
+        "200":
+          description: Current controller xDS policy sync status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/XDSSyncStatusResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+
+    CertificateResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        subject:
+          type: string
+        issuer:
+          type: string
+        notAfter:
+          type: string
+          format: date-time
+        count:
+          type: integer
+        status:
+          type: string
+
+    ConfigDumpAPIItem:
+      type: object
+      description: API item in config dump response
+      properties:
+        id:
+          type: string
+          format: uuid
+        configuration:
+          type: object
+          additionalProperties: true
+        metadata:
+          $ref: "#/components/schemas/ConfigDumpAPIMetadata"
+
+    ConfigDumpAPIMetadata:
+      type: object
+      description: Metadata for API in config dump
+      properties:
+        status:
+          type: string
+          enum:
+            - pending
+            - deployed
+            - failed
+            - undeployed
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        deployed_at:
+          type: string
+          format: date-time
+
+    ConfigDumpXDSSync:
+      type: object
+      description: xDS sync metadata included in config dump
+      properties:
+        policy_chain_version:
+          type: string
+          description: Latest policy chain version published by the controller
+
+    ConfigDumpResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        apis:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigDumpAPIItem"
+        policies:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        certificates:
+          type: array
+          items:
+            $ref: "#/components/schemas/CertificateResponse"
+        statistics:
+          type: object
+          properties:
+            totalApis:
+              type: integer
+            totalPolicies:
+              type: integer
+            totalCertificates:
+              type: integer
+            totalCertificateBytes:
+              type: integer
+        xds_sync:
+          $ref: "#/components/schemas/ConfigDumpXDSSync"
+
+    XDSSyncStatusResponse:
+      type: object
+      properties:
+        component:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        policy_chain_version:
+          type: string
+          description: Latest policy chain version published by the controller
+
+tags:
+  - name: System
+    description: System health and status endpoints

@@ -39,6 +39,8 @@ help: ## Show this help message
 generate: ## Generate API server code from OpenAPI spec
 	@echo "Generating API server code from OpenAPI spec..."
 	@go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.1 --config=oapi-codegen.yaml api/openapi.yaml
+	@echo "Generating admin API models from OpenAPI admin spec..."
+	@go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.1 --config=oapi-codegen-admin.yaml api/openapi-admin.yaml
 test: ## Run unit and integration tests
 	@echo "Running tests..."
 	@go test -v ./... -cover -coverprofile=unit-test-coverage.txt
