@@ -86,7 +86,7 @@ services:
       - gateway-network
 
   sample-backend:
-    image: renukafernando/request-info:latest
+    image: ghcr.io/wso2/api-platform/sample-service:latest
     ports:
       - "5000:5000"
     command: ["-addr", ":5000", "-pretty"]
