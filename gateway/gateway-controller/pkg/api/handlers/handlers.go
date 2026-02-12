@@ -2159,7 +2159,7 @@ func (s *APIServer) GetConfigDump(c *gin.Context) {
 		log.Error("Failed to retrieve configuration dump", slog.Any("error", err))
 		c.JSON(http.StatusInternalServerError, api.ErrorResponse{
 			Status:  "error",
-			Message: "Failed to retrieve certificates",
+			Message: err.Error(),
 		})
 		return
 	}
