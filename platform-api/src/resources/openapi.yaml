@@ -5313,9 +5313,7 @@ components:
           maxLength: 253
           example: "api.openai"
         provider:
-          type: string
-          description: Unique id of a deployed llm provider
-          example: wso2-openai-provider
+          $ref: '#/components/schemas/LLMProxyProvider'
         openapi:
           type: string
           description: OpenAPI specification (JSON or YAML) for the proxy endpoint
@@ -5403,6 +5401,19 @@ components:
             $ref: '#/components/schemas/LLMProxyListItem'
         pagination:
           $ref: '#/components/schemas/Pagination'
+
+    LLMProxyProvider:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          description: Unique id of a deployed llm provider
+          example: wso2-openai-provider
+        auth:
+          $ref: '#/components/schemas/UpstreamAuth'
+
     CreateLLMProviderAPIKeyRequest:
       type: object
       properties:

@@ -945,9 +945,19 @@ func generateLLMProxyDeploymentYAML(proxy *model.LLMProxy) (string, error) {
 			Version:     proxy.Version,
 			Context:     contextValue,
 			VHost:       vhostValue,
-			Provider:    proxy.Configuration.Provider,
-			Policies:    policies,
+			Provider: dto.LLMProxyDeploymentProvider{
+				ID: proxy.Configuration.Provider,
+			},
+			Policies: policies,
 		},
+	}
+
+	if proxy.Configuration.UpstreamAuth != nil {
+		proxyDeployment.Spec.Provider.Auth = &dto.UpstreamAuth{
+			Type:   proxy.Configuration.UpstreamAuth.Type,
+			Header: proxy.Configuration.UpstreamAuth.Header,
+			Value:  proxy.Configuration.UpstreamAuth.Value,
+		}
 	}
 
 	yamlBytes, err := yaml.Marshal(proxyDeployment)

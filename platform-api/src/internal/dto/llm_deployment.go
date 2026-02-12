@@ -57,10 +57,15 @@ type LLMProxyDeploymentYAML struct {
 
 // LLMProxyDeploymentSpec represents the spec section for LLM proxy deployments
 type LLMProxyDeploymentSpec struct {
-	DisplayName string      `yaml:"displayName"`
-	Version     string      `yaml:"version"`
-	Context     string      `yaml:"context,omitempty"`
-	VHost       string      `yaml:"vhost,omitempty"`
-	Provider    string      `yaml:"provider"`
-	Policies    []LLMPolicy `yaml:"policies,omitempty"`
+	DisplayName string                     `yaml:"displayName"`
+	Version     string                     `yaml:"version"`
+	Context     string                     `yaml:"context,omitempty"`
+	VHost       string                     `yaml:"vhost,omitempty"`
+	Provider    LLMProxyDeploymentProvider `yaml:"provider"`
+	Policies    []LLMPolicy                `yaml:"policies,omitempty"`
+}
+
+type LLMProxyDeploymentProvider struct {
+	ID   string        `yaml:"id"`
+	Auth *UpstreamAuth `yaml:"auth,omitempty"`
 }

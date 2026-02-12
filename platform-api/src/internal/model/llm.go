@@ -194,13 +194,14 @@ type LLMProxy struct {
 }
 
 type LLMProxyConfig struct {
-	Name     string          `json:"name,omitempty" db:"-"`
-	Version  string          `json:"version,omitempty" db:"-"`
-	Context  *string         `json:"context,omitempty" db:"-"`
-	Vhost    *string         `json:"vhost,omitempty" db:"-"`
-	Provider string          `json:"provider,omitempty" db:"-"`
-	Policies []LLMPolicy     `json:"policies,omitempty" db:"-"`
-	Security *SecurityConfig `json:"security,omitempty" db:"-"`
+	Name         string          `json:"name,omitempty" db:"-"`
+	Version      string          `json:"version,omitempty" db:"-"`
+	Context      *string         `json:"context,omitempty" db:"-"`
+	Vhost        *string         `json:"vhost,omitempty" db:"-"`
+	Provider     string          `json:"provider,omitempty" db:"-"`
+	UpstreamAuth *UpstreamAuth   `json:"upstreamAuth,omitempty" db:"-"`
+	Policies     []LLMPolicy     `json:"policies,omitempty" db:"-"`
+	Security     *SecurityConfig `json:"security,omitempty" db:"-"`
 }
 
 type SecurityConfig struct {

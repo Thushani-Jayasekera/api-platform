@@ -464,9 +464,10 @@ func (s *LLMProxyService) Create(orgUUID, createdBy string, req *dto.LLMProxy) (
 	if req == nil {
 		return nil, constants.ErrInvalidInput
 	}
-	if req.ID == "" || req.Name == "" || req.Version == "" || req.Provider == "" || req.ProjectID == "" {
+	if req.ID == "" || req.Name == "" || req.Version == "" || req.Provider.ID == "" || req.ProjectID == "" {
 		return nil, constants.ErrInvalidInput
 	}
+	normalizedUpstreamAuth := normalizeProxyUpstreamAuth(req.Provider.Auth)
 	if s.projectRepo != nil {
 		project, err := s.projectRepo.GetProjectByUUID(req.ProjectID)
 		if err != nil {
@@ -478,7 +479,7 @@ func (s *LLMProxyService) Create(orgUUID, createdBy string, req *dto.LLMProxy) (
 	}
 
 	// Validate provider exists
-	prov, err := s.providerRepo.GetByID(req.Provider, orgUUID)
+	prov, err := s.providerRepo.GetByID(req.Provider.ID, orgUUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate provider: %w", err)
 	}
@@ -507,11 +508,12 @@ func (s *LLMProxyService) Create(orgUUID, createdBy string, req *dto.LLMProxy) (
 		OpenAPISpec:      req.OpenAPI,
 		Status:           llmStatusPending,
 		Configuration: model.LLMProxyConfig{
-			Context:  &contextValue,
-			Vhost:    &req.VHost,
-			Provider: req.Provider,
-			Policies: mapPolicies(req.Policies),
-			Security: mapSecurityDTOToModel(req.Security),
+			Context:      &contextValue,
+			Vhost:        &req.VHost,
+			Provider:     req.Provider.ID,
+			UpstreamAuth: mapUpstreamAuth(normalizedUpstreamAuth),
+			Policies:     mapPolicies(req.Policies),
+			Security:     mapSecurityDTOToModel(req.Security),
 		},
 	}
 
@@ -658,12 +660,21 @@ func (s *LLMProxyService) Update(orgUUID, handle string, req *dto.LLMProxy) (*dt
 	if req.ID != "" && req.ID != handle {
 		return nil, constants.ErrInvalidInput
 	}
-	if req.Name == "" || req.Version == "" || req.Provider == "" {
+	if req.Name == "" || req.Version == "" || req.Provider.ID == "" {
 		return nil, constants.ErrInvalidInput
+	}
+	normalizedUpstreamAuth := normalizeProxyUpstreamAuth(req.Provider.Auth)
+
+	existing, err := s.repo.GetByID(handle, orgUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get existing proxy: %w", err)
+	}
+	if existing == nil {
+		return nil, constants.ErrLLMProxyNotFound
 	}
 
 	// Validate provider exists
-	prov, err := s.providerRepo.GetByID(req.Provider, orgUUID)
+	prov, err := s.providerRepo.GetByID(req.Provider.ID, orgUUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate provider: %w", err)
 	}
@@ -682,13 +693,17 @@ func (s *LLMProxyService) Update(orgUUID, handle string, req *dto.LLMProxy) (*dt
 		OpenAPISpec:      req.OpenAPI,
 		Status:           llmStatusPending,
 		Configuration: model.LLMProxyConfig{
-			Context:  &contextValue,
-			Vhost:    &req.VHost,
-			Provider: req.Provider,
-			Policies: mapPolicies(req.Policies),
-			Security: mapSecurityDTOToModel(req.Security),
+			Context:      &contextValue,
+			Vhost:        &req.VHost,
+			Provider:     req.Provider.ID,
+			UpstreamAuth: mapUpstreamAuth(normalizedUpstreamAuth),
+			Policies:     mapPolicies(req.Policies),
+			Security:     mapSecurityDTOToModel(req.Security),
 		},
 	}
+
+	// Preserve stored upstream auth credential when not supplied in update payload
+	m.Configuration.UpstreamAuth = preserveUpstreamAuthCredential(existing.Configuration.UpstreamAuth, m.Configuration.UpstreamAuth)
 	if err := s.repo.Update(m); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, constants.ErrLLMProxyNotFound
@@ -760,6 +775,29 @@ func preserveUpstreamAuthValue(existing, updated *model.UpstreamConfig) *model.U
 		updated.Main.Auth.Value = existing.Main.Auth.Value
 	}
 	return updated
+}
+
+func preserveUpstreamAuthCredential(existing, updated *model.UpstreamAuth) *model.UpstreamAuth {
+	if updated == nil {
+		return existing
+	}
+	if existing == nil {
+		return updated
+	}
+	if updated.Value == "" {
+		updated.Value = existing.Value
+	}
+	return updated
+}
+
+func normalizeProxyUpstreamAuth(in *dto.UpstreamAuth) *dto.UpstreamAuth {
+	if in == nil {
+		return nil
+	}
+	if strings.TrimSpace(in.Type) == "" && strings.TrimSpace(in.Header) == "" && strings.TrimSpace(in.Value) == "" {
+		return nil
+	}
+	return in
 }
 
 func defaultString(v, def string) string {
@@ -1385,11 +1423,20 @@ func mapProxyModelToDTO(m *model.LLMProxy) *dto.LLMProxy {
 		ProjectID:   m.ProjectUUID,
 		Context:     contextValue,
 		VHost:       vhostValue,
-		Provider:    m.Configuration.Provider,
-		OpenAPI:     m.OpenAPISpec,
-		Security:    mapSecurityModelToDTO(m.Configuration.Security),
-		CreatedAt:   m.CreatedAt,
-		UpdatedAt:   m.UpdatedAt,
+		Provider: dto.LLMProxyProvider{
+			ID:   m.Configuration.Provider,
+			Auth: nil,
+		},
+		OpenAPI:   m.OpenAPISpec,
+		Security:  mapSecurityModelToDTO(m.Configuration.Security),
+		CreatedAt: m.CreatedAt,
+		UpdatedAt: m.UpdatedAt,
+	}
+	if m.Configuration.UpstreamAuth != nil {
+		out.Provider.Auth = &dto.UpstreamAuth{
+			Type:   m.Configuration.UpstreamAuth.Type,
+			Header: m.Configuration.UpstreamAuth.Header,
+		}
 	}
 	if len(m.Configuration.Policies) > 0 {
 		out.Policies = make([]dto.LLMPolicy, 0, len(m.Configuration.Policies))
