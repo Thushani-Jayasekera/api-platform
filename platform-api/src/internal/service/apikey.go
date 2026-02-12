@@ -96,9 +96,6 @@ func (s *APIKeyService) CreateAPIKey(ctx context.Context, apiHandle, orgId, user
 	if req.DisplayName != nil {
 		event.DisplayName = *req.DisplayName
 	}
-	if req.Operations != nil {
-		event.Operations = *req.Operations
-	}
 	if req.ExpiresAt != nil {
 		expiresAtStr := req.ExpiresAt.Format(time.RFC3339)
 		event.ExpiresAt = &expiresAtStr
@@ -128,17 +125,17 @@ func (s *APIKeyService) CreateAPIKey(ctx context.Context, apiHandle, orgId, user
 			failureCount++
 			lastError = err
 			log.Printf("[ERROR] Failed to broadcast API key created event: apiHandle=%s gatewayId=%s keyName=%s error=%v",
-				apiId, gatewayID, keyName, err)
+				apiHandle, gatewayID, keyName, err)
 		} else {
 			successCount++
 			log.Printf("[INFO] Successfully broadcast API key created event: apiHandle=%s gatewayId=%s keyName=%s",
-				apiId, gatewayID, keyName)
+				apiHandle, gatewayID, keyName)
 		}
 	}
 
 	// Log summary
 	log.Printf("[INFO] API key creation broadcast summary: apiHandle=%s keyName=%s total=%d success=%d failed=%d",
-		apiId, keyName, len(gateways), successCount, failureCount)
+		apiHandle, keyName, len(gateways), successCount, failureCount)
 
 	// Return error if all deliveries failed
 	if successCount == 0 {

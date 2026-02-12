@@ -31,6 +31,7 @@ import (
 	"platform-api/src/internal/utils"
 
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -105,6 +106,9 @@ func (s *LLMProviderDeploymentService) DeployLLMProvider(providerID string, req 
 	}
 	if req.Base == "" {
 		return nil, constants.ErrDeploymentBaseRequired
+	}
+	if req.GatewayId == (openapi_types.UUID{}) {
+		return nil, constants.ErrDeploymentGatewayIDRequired
 	}
 	gatewayID := utils.OpenAPIUUIDToString(req.GatewayId)
 	if gatewayID == "" {
@@ -566,6 +570,9 @@ func (s *LLMProxyDeploymentService) DeployLLMProxy(proxyID string, req *api.Depl
 	}
 	if req.Base == "" {
 		return nil, constants.ErrDeploymentBaseRequired
+	}
+	if req.GatewayId == (openapi_types.UUID{}) {
+		return nil, constants.ErrDeploymentGatewayIDRequired
 	}
 	gatewayID := utils.OpenAPIUUIDToString(req.GatewayId)
 	if gatewayID == "" {

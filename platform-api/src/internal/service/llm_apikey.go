@@ -81,6 +81,10 @@ func (s *LLMProviderAPIKeyService) CreateLLMProviderAPIKey(
 		if req.DisplayName != nil {
 			displayName = *req.DisplayName
 		}
+		if displayName == "" {
+			log.Printf("[ERROR] Failed to generate API key name: providerID=%s error=%v", providerID, constants.ErrHandleSourceEmpty)
+			return nil, fmt.Errorf("failed to generate API key name: both name and displayName are empty: %w", constants.ErrHandleSourceEmpty)
+		}
 
 		name, err = utils.GenerateHandle(displayName, nil)
 		if err != nil {

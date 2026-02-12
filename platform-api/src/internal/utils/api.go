@@ -1390,17 +1390,5 @@ func isEmptyUpstreamDefinitionAPI(definition api.UpstreamDefinition) bool {
 	if definition.Ref != nil && *definition.Ref != "" {
 		return false
 	}
-	if definition.Auth == nil {
-		return true
-	}
-	if definition.Auth.Type != nil && *definition.Auth.Type != "" {
-		return false
-	}
-	if definition.Auth.Header != nil && *definition.Auth.Header != "" {
-		return false
-	}
-	if definition.Auth.Value != nil && *definition.Auth.Value != "" {
-		return false
-	}
 	return true
 }
