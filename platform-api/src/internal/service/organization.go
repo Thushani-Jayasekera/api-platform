@@ -19,16 +19,18 @@ package service
 
 import (
 	"log"
+	"platform-api/src/api"
 	"platform-api/src/config"
 	"platform-api/src/internal/constants"
-	"platform-api/src/internal/dto"
 	"platform-api/src/internal/model"
 	"platform-api/src/internal/repository"
+	"platform-api/src/internal/utils"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 type OrganizationService struct {
@@ -50,7 +52,7 @@ func NewOrganizationService(orgRepo repository.OrganizationRepository,
 	}
 }
 
-func (s *OrganizationService) RegisterOrganization(id string, handle string, name string, region string) (*dto.Organization, error) {
+func (s *OrganizationService) RegisterOrganization(id string, handle string, name string, region string) (*api.Organization, error) {
 	// Validate handle is URL friendly
 	if !s.isURLFriendly(handle) {
 		return nil, constants.ErrInvalidHandle
@@ -73,16 +75,15 @@ func (s *OrganizationService) RegisterOrganization(id string, handle string, nam
 	}
 
 	// Create organization in platform-api database first
-	org := &dto.Organization{
-		ID:        id,
+	org := &api.Organization{
+		Id:        &openapi_types.UUID{},
 		Handle:    handle,
 		Name:      name,
 		Region:    region,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: utils.TimePtrIfNotZero(time.Now()),
 	}
 
-	orgModel := s.dtoToModel(org)
+	orgModel := s.apiToModel(org, id)
 	err = s.orgRepo.CreateOrganization(orgModel)
 	if err != nil {
 		return nil, err
@@ -112,7 +113,7 @@ func (s *OrganizationService) RegisterOrganization(id string, handle string, nam
 	defaultProject := &model.Project{
 		ID:             uuid.New().String(),
 		Name:           "default",
-		OrganizationID: org.ID,
+		OrganizationID: id,
 		Description:    "Default project",
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
@@ -120,14 +121,15 @@ func (s *OrganizationService) RegisterOrganization(id string, handle string, nam
 
 	err = s.projectRepo.CreateProject(defaultProject)
 	if err != nil {
-		// If project creation fails, roll back the organization creation
-		return org, err
+		// If project creation fails, return the organization anyway
+		// (we don't rollback organization creation)
+		return s.modelToAPI(orgModel), err
 	}
 
-	return org, nil
+	return s.modelToAPI(orgModel), nil
 }
 
-func (s *OrganizationService) GetOrganizationByUUID(orgId string) (*dto.Organization, error) {
+func (s *OrganizationService) GetOrganizationByUUID(orgId string) (*api.Organization, error) {
 	orgModel, err := s.orgRepo.GetOrganizationByUUID(orgId)
 	if err != nil {
 		return nil, err
@@ -137,7 +139,7 @@ func (s *OrganizationService) GetOrganizationByUUID(orgId string) (*dto.Organiza
 		return nil, constants.ErrOrganizationNotFound
 	}
 
-	org := s.modelToDTO(orgModel)
+	org := s.modelToAPI(orgModel)
 	return org, nil
 }
 
@@ -150,32 +152,41 @@ func (s *OrganizationService) isURLFriendly(handle string) bool {
 }
 
 // Mapping functions
-func (s *OrganizationService) dtoToModel(dto *dto.Organization) *model.Organization {
-	if dto == nil {
+func (s *OrganizationService) apiToModel(org *api.Organization, id string) *model.Organization {
+	if org == nil {
 		return nil
+	}
+
+	createdAt := time.Now()
+	if org.CreatedAt != nil {
+		createdAt = *org.CreatedAt
 	}
 
 	return &model.Organization{
-		ID:        dto.ID,
-		Handle:    dto.Handle,
-		Name:      dto.Name,
-		Region:    dto.Region,
-		CreatedAt: dto.CreatedAt,
-		UpdatedAt: dto.UpdatedAt,
+		ID:        id,
+		Handle:    org.Handle,
+		Name:      org.Name,
+		Region:    org.Region,
+		CreatedAt: createdAt,
+		UpdatedAt: time.Now(),
 	}
 }
 
-func (s *OrganizationService) modelToDTO(model *model.Organization) *dto.Organization {
-	if model == nil {
+func (s *OrganizationService) modelToAPI(orgModel *model.Organization) *api.Organization {
+	if orgModel == nil {
 		return nil
 	}
 
-	return &dto.Organization{
-		ID:        model.ID,
-		Handle:    model.Handle,
-		Name:      model.Name,
-		Region:    model.Region,
-		CreatedAt: model.CreatedAt,
-		UpdatedAt: model.UpdatedAt,
+	orgID, err := utils.ParseOpenAPIUUID(orgModel.ID)
+	if err != nil {
+		return nil
+	}
+
+	return &api.Organization{
+		Id:        orgID,
+		Handle:    orgModel.Handle,
+		Name:      orgModel.Name,
+		Region:    orgModel.Region,
+		CreatedAt: utils.TimePtrIfNotZero(orgModel.CreatedAt),
 	}
 }
