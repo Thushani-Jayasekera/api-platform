@@ -190,20 +190,25 @@ type LLMProviderListResponse struct {
 }
 
 type LLMProxy struct {
-	ID          string          `json:"id" yaml:"id" binding:"required"`
-	Name        string          `json:"name" yaml:"name" binding:"required"`
-	Description string          `json:"description" yaml:"description"`
-	CreatedBy   string          `json:"createdBy" yaml:"createdBy"`
-	Version     string          `json:"version" yaml:"version" binding:"required"`
-	ProjectID   string          `json:"projectId" yaml:"projectId"`
-	Context     string          `json:"context" yaml:"context"`
-	VHost       string          `json:"vhost" yaml:"vhost"`
-	Provider    string          `json:"provider" yaml:"provider" binding:"required"`
-	OpenAPI     string          `json:"openapi" yaml:"openapi"`
-	Policies    []LLMPolicy     `json:"policies" yaml:"policies"`
-	Security    *SecurityConfig `json:"security" yaml:"security"`
-	CreatedAt   time.Time       `json:"createdAt" yaml:"createdAt"`
-	UpdatedAt   time.Time       `json:"updatedAt" yaml:"updatedAt"`
+	ID          string           `json:"id" yaml:"id" binding:"required"`
+	Name        string           `json:"name" yaml:"name" binding:"required"`
+	Description string           `json:"description" yaml:"description"`
+	CreatedBy   string           `json:"createdBy" yaml:"createdBy"`
+	Version     string           `json:"version" yaml:"version" binding:"required"`
+	ProjectID   string           `json:"projectId" yaml:"projectId"`
+	Context     string           `json:"context" yaml:"context"`
+	VHost       string           `json:"vhost" yaml:"vhost"`
+	Provider    LLMProxyProvider `json:"provider" yaml:"provider" binding:"required"`
+	OpenAPI     string           `json:"openapi" yaml:"openapi"`
+	Policies    []LLMPolicy      `json:"policies" yaml:"policies"`
+	Security    *SecurityConfig  `json:"security" yaml:"security"`
+	CreatedAt   time.Time        `json:"createdAt" yaml:"createdAt"`
+	UpdatedAt   time.Time        `json:"updatedAt" yaml:"updatedAt"`
+}
+
+type LLMProxyProvider struct {
+	ID   string        `json:"id" yaml:"id" binding:"required"`
+	Auth *UpstreamAuth `json:"auth,omitempty" yaml:"auth,omitempty"`
 }
 
 type LLMProxyListItem struct {
