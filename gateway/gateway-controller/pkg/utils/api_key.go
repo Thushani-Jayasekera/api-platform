@@ -494,6 +494,14 @@ func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateRe
 	logger.Info("Starting API key update",
 		slog.String("user", user.UserID))
 
+	// Validate that the name in the request body (if provided) matches the URL path parameter
+	if params.Request.Name != nil && *params.Request.Name != "" && *params.Request.Name != params.APIKeyName {
+		logger.Warn("API key name mismatch between URL and request body",
+			slog.String("url_key_name", params.APIKeyName),
+			slog.String("body_key_name", *params.Request.Name))
+		return nil, fmt.Errorf("API key name mismatch: name in request body '%s' must match the key name in URL '%s'", *params.Request.Name, params.APIKeyName)
+	}
+
 	// Get the API configuration
 	config, err := s.store.GetByHandle(params.Handle)
 	if err != nil {
