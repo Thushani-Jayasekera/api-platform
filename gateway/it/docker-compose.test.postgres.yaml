@@ -116,7 +116,7 @@ services:
 
   sample-backend:
     container_name: it-sample-backend
-    image: renukafernando/request-info:latest
+    image: ghcr.io/wso2/api-platform/sample-service:latest
     ports:
       - "9080:9080"
     command: ["-addr", ":9080", "-pretty"]

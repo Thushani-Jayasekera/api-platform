@@ -668,7 +668,7 @@ pipeline {
   - `ghcr.io/wso2/api-platform/gateway-controller-coverage:0.3.0-SNAPSHOT`
   - `ghcr.io/wso2/api-platform/policy-engine:0.3.0-SNAPSHOT`
   - `ghcr.io/wso2/api-platform/gateway-router:0.3.0-SNAPSHOT`
-  - `renukafernando/request-info:latest`
+  - `ghcr.io/wso2/api-platform/sample-service:latest`
   - `rakhitharr/mcp-everything:v3`
 
 ---
