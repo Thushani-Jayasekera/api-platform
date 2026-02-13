@@ -228,7 +228,7 @@ func TestReplaceAllAPIKeys_ClearsExistingKeys(t *testing.T) {
 		{
 			ID:         "new-key",
 			Name:       "new-key-name",
-			APIKey:     "new-api-key-value",
+			APIKey:     apikey.ComputeAPIKeyHash("new-api-key-value"), // Hash before storing
 			APIId:      "api-1",
 			Operations: `["*"]`,
 			Status:     "active",
