@@ -614,16 +614,15 @@ func (c *Client) updatePolicyForDeployment(apiID, correlationID string, result *
 		return nil
 	}
 
-	var storedPolicy *models.StoredPolicyConfig
-
 	// Guard against nil systemConfig before deriving policies
-	if c.systemConfig != nil {
-		storedPolicy = policy.DerivePolicyFromAPIConfig(result.StoredConfig, c.routerConfig, c.systemConfig, c.policyDefinitions)
-	} else {
+	if c.systemConfig == nil {
 		c.logger.Warn("Cannot derive policies: systemConfig is nil",
 			slog.String("api_id", apiID),
 			slog.String("correlation_id", correlationID))
+		return nil
 	}
+
+	storedPolicy := policy.DerivePolicyFromAPIConfig(result.StoredConfig, c.routerConfig, c.systemConfig, c.policyDefinitions)
 
 	if storedPolicy != nil {
 		// Add or update policy
