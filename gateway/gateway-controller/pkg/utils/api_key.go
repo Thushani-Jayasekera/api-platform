@@ -537,6 +537,13 @@ func (s *APIKeyService) UpdateAPIKey(params APIKeyUpdateParams) (*APIKeyUpdateRe
 			return &APIKeyUpdateResult{
 				Response: creationResult.Response,
 			}, nil
+		} else if storage.IsNotFoundError(err) {
+			// Key not found and no API key value provided for creation
+			logger.Warn("API key not found and no api_key value provided for creation",
+				slog.String("handle", params.Handle),
+				slog.String("api_key_name", params.APIKeyName),
+				slog.String("correlation_id", params.CorrelationID))
+			return nil, fmt.Errorf("API key '%s' not found for API '%s' and no api_key value provided to create one", params.APIKeyName, params.Handle)
 		}
 
 		// For non-"not found" errors, return the error
