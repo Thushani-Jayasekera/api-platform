@@ -200,7 +200,6 @@ const (
 // Defines values for MCPProxyConfigDataUpstreamAuthType.
 const (
 	MCPProxyConfigDataUpstreamAuthTypeApiKey MCPProxyConfigDataUpstreamAuthType = "api-key"
-	MCPProxyConfigDataUpstreamAuthTypeBearer MCPProxyConfigDataUpstreamAuthType = "bearer"
 )
 
 // Defines values for MCPProxyConfigDataUpstreamHostRewrite.
