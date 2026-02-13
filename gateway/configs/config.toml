@@ -7,6 +7,9 @@ enabled_publishers = ["moesif"]
 [analytics.publishers.moesif]
 application_id = "<MOESIF_APPLICATION_ID>"
 
+[gateway_controller.server]
+gateway_id = "platform-gateway-id"
+
 [router]
 gateway_host = "*"
 

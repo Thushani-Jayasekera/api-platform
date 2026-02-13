@@ -7,6 +7,9 @@ CREATE TABLE IF NOT EXISTS deployments (
     -- Primary identifier (UUID)
     id TEXT PRIMARY KEY,
 
+    -- Gateway identifier
+    gateway_id TEXT NOT NULL DEFAULT 'platform-gateway-id',
+
     -- Extracted fields for fast querying
     display_name TEXT NOT NULL,
     version TEXT NOT NULL,
@@ -26,12 +29,10 @@ CREATE TABLE IF NOT EXISTS deployments (
     deployed_version INTEGER NOT NULL DEFAULT 0,
 
     -- Composite unique constraint (API display_name + version must be unique)
-    UNIQUE(display_name, version)
+    UNIQUE(display_name, version, gateway_id)
 );
 
 -- Indexes for fast lookups
--- Composite index for display_name+version lookups (most common query)
-CREATE INDEX IF NOT EXISTS idx_name_version ON deployments(display_name, version);
 
 -- Filter by deployment status (translator queries pending configs)
 CREATE INDEX IF NOT EXISTS idx_status ON deployments(status);
@@ -42,6 +43,9 @@ CREATE INDEX IF NOT EXISTS idx_context ON deployments(context);
 -- Filter by API type (reporting/analytics)
 CREATE INDEX IF NOT EXISTS idx_kind ON deployments(kind);
 
+-- Filter by gateway
+CREATE INDEX IF NOT EXISTS idx_deployments_gateway_id ON deployments(gateway_id);
+
 -- Note: Policy definitions are no longer stored in the database.
 -- They are loaded from files at controller startup (see policies/ directory).
 -- The policy_definitions table has been removed as of schema version 3.
@@ -50,6 +54,9 @@ CREATE INDEX IF NOT EXISTS idx_kind ON deployments(kind);
 CREATE TABLE IF NOT EXISTS certificates (
     -- Primary identifier (UUID)
     id TEXT PRIMARY KEY,
+
+    -- Gateway identifier
+    gateway_id TEXT NOT NULL DEFAULT 'platform-gateway-id',
     
     -- Human-readable name for the certificate
     name TEXT NOT NULL UNIQUE,
@@ -75,6 +82,9 @@ CREATE INDEX IF NOT EXISTS idx_cert_name ON certificates(name);
 -- Index for expiry tracking
 CREATE INDEX IF NOT EXISTS idx_cert_expiry ON certificates(not_after);
 
+-- Filter by gateway
+CREATE INDEX IF NOT EXISTS idx_certificates_gateway_id ON certificates(gateway_id);
+
 
 -- Table for deployment-specific configurations
 CREATE TABLE IF NOT EXISTS deployment_configs (
@@ -88,6 +98,9 @@ CREATE TABLE IF NOT EXISTS deployment_configs (
 CREATE TABLE IF NOT EXISTS llm_provider_templates (
     -- Primary identifier (UUID)
     id TEXT PRIMARY KEY,
+
+    -- Gateway identifier
+    gateway_id TEXT NOT NULL DEFAULT 'platform-gateway-id',
 
     -- Template handle (must be unique)
     handle TEXT NOT NULL UNIQUE,
@@ -103,10 +116,16 @@ CREATE TABLE IF NOT EXISTS llm_provider_templates (
 -- Index for fast name lookups
 CREATE INDEX IF NOT EXISTS idx_template_handle ON llm_provider_templates(handle);
 
+-- Filter by gateway
+CREATE INDEX IF NOT EXISTS idx_llm_provider_templates_gateway_id ON llm_provider_templates(gateway_id);
+
 -- Table for API keys
 CREATE TABLE IF NOT EXISTS api_keys (
     -- Primary identifier (UUID)
     id TEXT PRIMARY KEY,
+
+    -- Gateway identifier
+    gateway_id TEXT NOT NULL DEFAULT 'platform-gateway-id',
 
     -- Human-readable name for the API key
     name TEXT NOT NULL,
@@ -153,7 +172,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     FOREIGN KEY (apiId) REFERENCES deployments(id) ON DELETE CASCADE,
 
     -- Composite unique constraint (handle + api key name must be unique)
-    UNIQUE (apiId, name)
+    UNIQUE (apiId, name, gateway_id)
 );
 
 -- Indexes for API key lookups
@@ -165,9 +184,10 @@ CREATE INDEX IF NOT EXISTS idx_created_by ON api_keys(created_by);
 CREATE INDEX IF NOT EXISTS idx_api_key_source ON api_keys(source);
 CREATE INDEX IF NOT EXISTS idx_api_key_external_ref ON api_keys(external_ref_id);
 CREATE INDEX IF NOT EXISTS idx_api_key_index_key ON api_keys(index_key);
+CREATE INDEX IF NOT EXISTS idx_api_keys_gateway_id ON api_keys(gateway_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_external_api_key
     ON api_keys(apiId, index_key)
     WHERE source = 'external' AND index_key IS NOT NULL;
 
--- Set schema version to 7 (deployments status CHECK constraint includes 'undeployed')
-PRAGMA user_version = 7;
+-- Set schema version to 8 (add gateway_id column)
+PRAGMA user_version = 8;
