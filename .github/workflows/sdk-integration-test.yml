@@ -34,11 +34,10 @@ jobs:
 
           cd ../gateway-controller
           go mod edit -replace github.com/wso2/api-platform/sdk=../../sdk
-
-      - name: Build gateway images
+      - name: Build coverage-instrumented images
         run: |
           cd gateway
-          make build-local VERSION=test
+          make build-coverage VERSION=test
 
       - name: Build mock server images
         run: |
