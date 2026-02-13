@@ -35,8 +35,7 @@ import (
 func TestBuildPolicyChain_EmptySpecs(t *testing.T) {
 	kernel := NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	chain, err := kernel.BuildPolicyChain("test-route", []policy.PolicySpec{}, reg, policy.PolicyMetadata{})
@@ -53,8 +52,7 @@ func TestBuildPolicyChain_EmptySpecs(t *testing.T) {
 func TestBuildPolicyChain_UnknownPolicy(t *testing.T) {
 	kernel := NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	specs := []policy.PolicySpec{
@@ -75,8 +73,7 @@ func TestBuildPolicyChain_UnknownPolicy(t *testing.T) {
 func TestBuildPolicyChain_WithExecutionCondition(t *testing.T) {
 	kernel := NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	condition := "request.method == 'POST'"
@@ -101,8 +98,7 @@ func TestBuildPolicyChain_WithExecutionCondition(t *testing.T) {
 func TestBuildPolicyChain_WithAPIMetadata(t *testing.T) {
 	kernel := NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	apiMetadata := policy.PolicyMetadata{

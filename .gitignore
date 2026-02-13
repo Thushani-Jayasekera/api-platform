@@ -59,9 +59,7 @@ tmp/
 # IDE and editor files
 .idea/
 .vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/extensions.json
+!.vscode/launch.json
 *.swp
 *.swo
 *~
@@ -89,7 +87,6 @@ yarn-debug.log*
 .classpath
 .settings
 .project
-.vscode
 
 *.DS_Store
 

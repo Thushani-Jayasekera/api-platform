@@ -334,11 +334,11 @@ func TestDerivePolicyFromAPIConfig(t *testing.T) {
 			}
 		}
 
-		// Expect two entries for MultiVersionPolicy with different resolved full versions.
+		// Expect two entries for MultiVersionPolicy with major-only versions (sent to engine as-is).
 		require.Len(t, versions, 2, "expected two MultiVersionPolicy entries in the route")
-		assert.NotEqual(t, versions[0], versions[1], "expected resolved versions for v1 and v2 majors to differ")
-		assert.Contains(t, versions, "v1.0.0", "v1 major should resolve to v1.0.0")
-		assert.Contains(t, versions, "v2.0.0", "v2 major should resolve to v2.0.0")
+		assert.NotEqual(t, versions[0], versions[1], "expected versions for v1 and v2 majors to differ")
+		assert.Contains(t, versions, "v1", "v1 major should be passed as v1")
+		assert.Contains(t, versions, "v2", "v2 major should be passed as v2")
 	})
 }
 
@@ -376,10 +376,10 @@ func TestDerivePolicyFromAPIConfig_InvalidConfig(t *testing.T) {
 // Enables resolving major-only (v0, v1, v2) to full semver for cors, rate-limit, MultiVersionPolicy.
 func testPolicyDefinitions() map[string]api.PolicyDefinition {
 	return map[string]api.PolicyDefinition{
-		"cors|v0.1.0":                 {Name: "cors", Version: "v0.1.0"},
-		"rate-limit|v1.0.0":           {Name: "rate-limit", Version: "v1.0.0"},
-		"MultiVersionPolicy|v1.0.0":   {Name: "MultiVersionPolicy", Version: "v1.0.0"},
-		"MultiVersionPolicy|v2.0.0":   {Name: "MultiVersionPolicy", Version: "v2.0.0"},
+		"cors|v0.1.0":               {Name: "cors", Version: "v0.1.0"},
+		"rate-limit|v1.0.0":         {Name: "rate-limit", Version: "v1.0.0"},
+		"MultiVersionPolicy|v1.0.0": {Name: "MultiVersionPolicy", Version: "v1.0.0"},
+		"MultiVersionPolicy|v2.0.0": {Name: "MultiVersionPolicy", Version: "v2.0.0"},
 	}
 }
 
@@ -682,12 +682,12 @@ func TestGenerateAuthConfig(t *testing.T) {
 		assert.Contains(t, authConfig.ResourceRoles, "POST /apis")
 		assert.Contains(t, authConfig.ResourceRoles, "GET /apis")
 		assert.Contains(t, authConfig.ResourceRoles, "GET /policies")
-		assert.Contains(t, authConfig.ResourceRoles, "GET /config_dump")
+		assert.NotContains(t, authConfig.ResourceRoles, "GET /config_dump")
+		assert.NotContains(t, authConfig.ResourceRoles, "GET /xds_sync_status")
 
 		// Check role assignments
 		assert.Contains(t, authConfig.ResourceRoles["POST /apis"], "admin")
 		assert.Contains(t, authConfig.ResourceRoles["POST /apis"], "developer")
-		assert.Contains(t, authConfig.ResourceRoles["GET /config_dump"], "admin")
 	})
 }
 

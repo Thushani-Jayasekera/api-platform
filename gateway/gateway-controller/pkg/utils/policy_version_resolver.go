@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/generated"
+	versionutil "github.com/wso2/api-platform/common/version"
 )
 
 // PolicyDefinitionMissingUserMessage is returned to clients when a required policy definition is missing.
@@ -77,7 +78,7 @@ func NewLoadedPolicyVersionResolver(policyDefinitions map[string]api.PolicyDefin
 		}
 	}
 	for name, version := range versions {
-		versions[name] = majorOnlyVersion(version)
+		versions[name] = versionutil.MajorVersion(version)
 	}
 	return NewStaticPolicyVersionResolver(versions)
 }
@@ -114,26 +115,6 @@ func compareSemver(a, b string) int {
 		return compareInts(aMinor, bMinor)
 	}
 	return compareInts(aPatch, bPatch)
-}
-
-func majorOnlyVersion(v string) string {
-	trimmed := strings.TrimSpace(v)
-	if trimmed == "" {
-		return trimmed
-	}
-
-	raw := strings.TrimPrefix(trimmed, "v")
-	parts := strings.Split(raw, ".")
-	if len(parts) == 0 {
-		return trimmed
-	}
-
-	major, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return trimmed
-	}
-
-	return fmt.Sprintf("v%d", major)
 }
 
 func parseSemver(v string) (int, int, int, bool) {

@@ -109,13 +109,7 @@ func (cl *ConfigLoader) validateConfig(config *policyenginev1.PolicyChain) error
 		}
 
 		// Check if policy exists in registry
-		_, err := cl.registry.GetDefinition(policyConfig.Name, policyConfig.Version)
-		if err != nil {
-			return fmt.Errorf("policy[%d]: %w", i, err)
-		}
-
-		_, err = cl.registry.GetFactory(policyConfig.Name, policyConfig.Version)
-		if err != nil {
+		if err := cl.registry.PolicyExists(policyConfig.Name, policyConfig.Version); err != nil {
 			return fmt.Errorf("policy[%d]: %w", i, err)
 		}
 	}

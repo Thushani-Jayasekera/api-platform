@@ -36,11 +36,10 @@ import (
 func TestDumpConfig_Empty(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
-	result := DumpConfig(k, reg)
+	result := DumpConfig(k, reg, "pc-v1")
 
 	require.NotNil(t, result)
 	assert.False(t, result.Timestamp.IsZero())
@@ -48,34 +47,39 @@ func TestDumpConfig_Empty(t *testing.T) {
 	assert.Equal(t, 0, result.PolicyRegistry.TotalPolicies)
 	assert.Empty(t, result.Routes.RouteConfigs)
 	assert.Equal(t, 0, result.Routes.TotalRoutes)
+	assert.Equal(t, "pc-v1", result.XDSSync.PolicyChainVersion)
 }
 
 func TestDumpConfig_WithPolicies(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: map[string]*policy.PolicyDefinition{
-			"test-policy:v1.0.0": {
-				Name:    "test-policy",
-				Version: "v1.0.0",
+		Policies: map[string]*registry.PolicyEntry{
+			"test-policy:v1": {
+				Definition: &policy.PolicyDefinition{
+					Name:    "test-policy",
+					Version: "v1.0.0",
+				},
 			},
-			"another-policy:v2.0.0": {
-				Name:    "another-policy",
-				Version: "v2.0.0",
+			"another-policy:v2": {
+				Definition: &policy.PolicyDefinition{
+					Name:    "another-policy",
+					Version: "v2.0.0",
+				},
 			},
 		},
-		Factories: make(map[string]policy.PolicyFactory),
 	}
 
-	result := DumpConfig(k, reg)
+	result := DumpConfig(k, reg, "pc-v2")
 
 	require.NotNil(t, result)
 	assert.Equal(t, 2, result.PolicyRegistry.TotalPolicies)
 	assert.Len(t, result.PolicyRegistry.Policies, 2)
+	assert.Equal(t, "pc-v2", result.XDSSync.PolicyChainVersion)
 }
 
 func TestDumpConfig_WithRoutes(t *testing.T) {
 	k := kernel.NewKernel()
-	
+
 	chain := &registry.PolicyChain{
 		RequiresRequestBody:  true,
 		RequiresResponseBody: false,
@@ -86,21 +90,21 @@ func TestDumpConfig_WithRoutes(t *testing.T) {
 	k.RegisterRoute("test-route", chain)
 
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
-	result := DumpConfig(k, reg)
+	result := DumpConfig(k, reg, "pc-v3")
 
 	require.NotNil(t, result)
 	assert.Equal(t, 1, result.Routes.TotalRoutes)
 	require.Len(t, result.Routes.RouteConfigs, 1)
-	
+
 	routeConfig := result.Routes.RouteConfigs[0]
 	assert.Equal(t, "test-route", routeConfig.RouteKey)
 	assert.True(t, routeConfig.RequiresRequestBody)
 	assert.False(t, routeConfig.RequiresResponseBody)
 	assert.Equal(t, 1, routeConfig.TotalPolicies)
+	assert.Equal(t, "pc-v3", result.XDSSync.PolicyChainVersion)
 }
 
 // =============================================================================
@@ -109,7 +113,7 @@ func TestDumpConfig_WithRoutes(t *testing.T) {
 
 func TestDumpPolicyRegistry_Empty(t *testing.T) {
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	result := dumpPolicyRegistry(reg)
@@ -120,14 +124,18 @@ func TestDumpPolicyRegistry_Empty(t *testing.T) {
 
 func TestDumpPolicyRegistry_Multiple(t *testing.T) {
 	reg := &registry.PolicyRegistry{
-		Definitions: map[string]*policy.PolicyDefinition{
-			"auth-policy:v1.0.0": {
-				Name:    "auth-policy",
-				Version: "v1.0.0",
+		Policies: map[string]*registry.PolicyEntry{
+			"auth-policy:v1": {
+				Definition: &policy.PolicyDefinition{
+					Name:    "auth-policy",
+					Version: "v1.0.0",
+				},
 			},
-			"rate-limit:v2.0.0": {
-				Name:    "rate-limit",
-				Version: "v2.0.0",
+			"rate-limit:v2": {
+				Definition: &policy.PolicyDefinition{
+					Name:    "rate-limit",
+					Version: "v2.0.0",
+				},
 			},
 		},
 	}
@@ -161,7 +169,7 @@ func TestDumpRoutes_Empty(t *testing.T) {
 
 func TestDumpRoutes_SingleRoute(t *testing.T) {
 	k := kernel.NewKernel()
-	
+
 	condition := "request.method == 'GET'"
 	chain := &registry.PolicyChain{
 		RequiresRequestBody:  true,
@@ -200,14 +208,14 @@ func TestDumpRoutes_SingleRoute(t *testing.T) {
 
 func TestDumpRoutes_MultipleRoutes(t *testing.T) {
 	k := kernel.NewKernel()
-	
+
 	chain1 := &registry.PolicyChain{
 		PolicySpecs: []policy.PolicySpec{{Name: "p1", Version: "v1"}},
 	}
 	chain2 := &registry.PolicyChain{
 		PolicySpecs: []policy.PolicySpec{{Name: "p2", Version: "v2"}, {Name: "p3", Version: "v3"}},
 	}
-	
+
 	k.RegisterRoute("route-1", chain1)
 	k.RegisterRoute("route-2", chain2)
 

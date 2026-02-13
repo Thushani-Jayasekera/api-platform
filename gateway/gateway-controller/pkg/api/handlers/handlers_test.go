@@ -36,9 +36,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/wso2/api-platform/common/constants"
 	commonmodels "github.com/wso2/api-platform/common/models"
+	adminapi "github.com/wso2/api-platform/gateway/gateway-controller/pkg/adminapi/generated"
 	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/generated"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/config"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
+	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/policyxds"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/storage"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/utils"
 )
@@ -789,11 +791,50 @@ func TestGetConfigDump(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response api.ConfigDumpResponse
+	var response adminapi.ConfigDumpResponse
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 	assert.Equal(t, "success", *response.Status)
 	assert.NotNil(t, response.Statistics)
+	assert.NotNil(t, response.XdsSync)
+	assert.Equal(t, "0", *response.XdsSync.PolicyChainVersion)
+}
+
+func TestGetXDSSyncStatus(t *testing.T) {
+	server := createTestAPIServer()
+
+	c, w := createTestContext("GET", "/xds_sync_status", nil)
+	server.GetXDSSyncStatus(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response adminapi.XDSSyncStatusResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, "gateway-controller", *response.Component)
+	assert.Equal(t, "0", *response.PolicyChainVersion)
+	assert.NotNil(t, response.Timestamp)
+}
+
+func TestGetXDSSyncStatusWithPolicyVersion(t *testing.T) {
+	server := createTestAPIServer()
+
+	policyStore := storage.NewPolicyStore()
+	snapshotMgr := policyxds.NewSnapshotManager(policyStore, server.logger)
+	server.policyManager = policyxds.NewPolicyManager(policyStore, snapshotMgr, server.logger)
+
+	policyStore.IncrementResourceVersion()
+	policyStore.IncrementResourceVersion()
+
+	c, w := createTestContext("GET", "/xds_sync_status", nil)
+	server.GetXDSSyncStatus(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response adminapi.XDSSyncStatusResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, "2", *response.PolicyChainVersion)
 }
 
 // TestGetConfigDumpWithCertificates tests config dump with certificates
@@ -1600,13 +1641,12 @@ func TestConfigDumpAPIStatusConversion(t *testing.T) {
 	server := createTestAPIServer()
 
 	testCases := []struct {
-		name           string
-		status         models.ConfigStatus
-		expectedStatus api.ConfigDumpAPIMetadataStatus
+		name   string
+		status models.ConfigStatus
 	}{
-		{"deployed", models.StatusDeployed, api.ConfigDumpAPIMetadataStatusDeployed},
-		{"failed", models.StatusFailed, api.ConfigDumpAPIMetadataStatusFailed},
-		{"pending", models.StatusPending, api.ConfigDumpAPIMetadataStatusPending},
+		{"deployed", models.StatusDeployed},
+		{"failed", models.StatusFailed},
+		{"pending", models.StatusPending},
 	}
 
 	for _, tc := range testCases {
@@ -2415,4 +2455,51 @@ func TestRevokeAPIKeyNotFound(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 	assert.Equal(t, "error", response.Status)
+}
+
+// MockPolicyManager is a mock implementation of the policy manager for testing
+type MockPolicyManager struct {
+	removePolicyErr error
+	addPolicyErr    error
+	removedPolicyID string
+	addedPolicy     *models.StoredPolicyConfig
+}
+
+func (m *MockPolicyManager) RemovePolicy(id string) error {
+	m.removedPolicyID = id
+	return m.removePolicyErr
+}
+
+func (m *MockPolicyManager) AddPolicy(policy *models.StoredPolicyConfig) error {
+	m.addedPolicy = policy
+	return m.addPolicyErr
+}
+
+func (m *MockPolicyManager) GetPolicy(id string) (*models.StoredPolicyConfig, error) {
+	return nil, nil
+}
+
+func (m *MockPolicyManager) ListPolicies() []*models.StoredPolicyConfig {
+	return nil
+}
+
+// TestPolicyRemovalErrorHandling tests error handling in policy removal logic
+func TestPolicyRemovalErrorHandling(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool // true if ErrPolicyNotFound, false otherwise
+	}{
+		{"policy not found", fmt.Errorf("wrapped: %w", storage.ErrPolicyNotFound), true},
+		{"storage error", errors.New("database failed"), false},
+		{"success", nil, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockPolicyManager{removePolicyErr: tt.err}
+			err := mock.RemovePolicy("test-id")
+			assert.Equal(t, tt.want, storage.IsPolicyNotFoundError(err))
+		})
+	}
 }

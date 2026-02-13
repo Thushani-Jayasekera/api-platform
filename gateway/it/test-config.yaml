@@ -324,7 +324,7 @@ policy_engine:
 
 policy_configurations:
   # JWT Authentication Policy Configuration
-  jwtauth_v010:
+  jwtauth_v0:
     keymanagers:
       - name: mock-jwks
         issuer: "http://mock-jwks:8080/token"
@@ -372,7 +372,7 @@ policy_configurations:
 
   # Rate Limiting Policy Configuration
   # See documentation: docs/gateway/policies/ratelimit.md
-  ratelimit_v010:
+  ratelimit_v0:
     # Rate limiting algorithm: "gcra" (smooth rate limiting with burst support) or "fixed-window" (simple counter)
     algorithm: fixed-window
     redis:
@@ -380,7 +380,7 @@ policy_configurations:
       username: ""
 
   # Model Weighted Round-Robin Policy Configuration
-  modelweightedroundrobin_v010:
+  modelweightedroundrobin_v0:
     requestModel:
       location: payload
       identifier: $.model

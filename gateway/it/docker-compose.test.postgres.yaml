@@ -46,6 +46,7 @@ services:
     command: ["-config", "/etc/gateway-controller/config.toml"]
     ports:
       - "9090:9090"   # REST API
+      - "9092:9092"   # Admin API
       - "18000:18000" # xDS gRPC
       - "18001:18001"
       - "9091:9091"   # Metrics
@@ -115,7 +116,7 @@ services:
 
   sample-backend:
     container_name: it-sample-backend
-    image: renukafernando/request-info:latest
+    image: ghcr.io/wso2/api-platform/sample-service:latest
     ports:
       - "9080:9080"
     command: ["-addr", ":9080", "-pretty"]

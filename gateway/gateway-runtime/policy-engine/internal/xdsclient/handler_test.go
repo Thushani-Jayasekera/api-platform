@@ -30,7 +30,6 @@ import (
 
 	"github.com/wso2/api-platform/gateway/gateway-runtime/policy-engine/internal/kernel"
 	"github.com/wso2/api-platform/gateway/gateway-runtime/policy-engine/internal/registry"
-	policy "github.com/wso2/api-platform/sdk/gateway/policy/v1alpha"
 	policyenginev1 "github.com/wso2/api-platform/sdk/gateway/policyengine/v1"
 )
 
@@ -41,8 +40,7 @@ import (
 func TestNewResourceHandler(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 
 	handler := NewResourceHandler(k, reg)
@@ -62,8 +60,7 @@ func TestNewResourceHandler(t *testing.T) {
 func TestConvertStoredConfigToPolicyChains_Empty(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -81,8 +78,7 @@ func TestConvertStoredConfigToPolicyChains_Empty(t *testing.T) {
 func TestConvertStoredConfigToPolicyChains_MultipleRoutes(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -110,8 +106,7 @@ func TestConvertStoredConfigToPolicyChains_MultipleRoutes(t *testing.T) {
 func TestValidatePolicyChainConfig_EmptyRouteKey(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -128,15 +123,14 @@ func TestValidatePolicyChainConfig_EmptyRouteKey(t *testing.T) {
 func TestValidatePolicyChainConfig_PolicyMissingName(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
 	config := &policyenginev1.PolicyChain{
 		RouteKey: "test-route",
 		Policies: []policyenginev1.PolicyInstance{
-			{Name: "", Version: "v1.0.0"},
+			{Name: "", Version: "v1"},
 		},
 	}
 
@@ -149,8 +143,7 @@ func TestValidatePolicyChainConfig_PolicyMissingName(t *testing.T) {
 func TestValidatePolicyChainConfig_PolicyMissingVersion(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -170,15 +163,14 @@ func TestValidatePolicyChainConfig_PolicyMissingVersion(t *testing.T) {
 func TestValidatePolicyChainConfig_PolicyNotInRegistry(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
 	config := &policyenginev1.PolicyChain{
 		RouteKey: "test-route",
 		Policies: []policyenginev1.PolicyInstance{
-			{Name: "nonexistent-policy", Version: "v1.0.0"},
+			{Name: "nonexistent-policy", Version: "v1"},
 		},
 	}
 
@@ -191,8 +183,7 @@ func TestValidatePolicyChainConfig_PolicyNotInRegistry(t *testing.T) {
 func TestValidatePolicyChainConfig_NoPolicies(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -213,8 +204,7 @@ func TestValidatePolicyChainConfig_NoPolicies(t *testing.T) {
 func TestGetAllRouteKeys(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -232,8 +222,7 @@ func TestGetAllRouteKeys(t *testing.T) {
 func TestHandlePolicyChainUpdate_EmptyResources(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -246,8 +235,7 @@ func TestHandlePolicyChainUpdate_EmptyResources(t *testing.T) {
 func TestHandlePolicyChainUpdate_WrongTypeURL(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -265,8 +253,7 @@ func TestHandlePolicyChainUpdate_WrongTypeURL(t *testing.T) {
 func TestHandlePolicyChainUpdate_InvalidInnerAny(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -284,8 +271,7 @@ func TestHandlePolicyChainUpdate_InvalidInnerAny(t *testing.T) {
 func TestHandlePolicyChainUpdate_InvalidStructInInnerAny(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -310,8 +296,7 @@ func TestHandlePolicyChainUpdate_InvalidStructInInnerAny(t *testing.T) {
 func TestHandlePolicyChainUpdate_ValidEmptyConfig(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -355,8 +340,7 @@ func TestHandlePolicyChainUpdate_ValidEmptyConfig(t *testing.T) {
 func TestHandlePolicyChainUpdate_RouteWithInvalidPolicy(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -376,7 +360,7 @@ func TestHandlePolicyChainUpdate_RouteWithInvalidPolicy(t *testing.T) {
 					"policies": []interface{}{
 						map[string]interface{}{
 							"name":       "nonexistent-policy",
-							"version":    "v1.0.0",
+							"version":    "v1",
 							"enabled":    true,
 							"parameters": map[string]interface{}{},
 						},
@@ -412,8 +396,7 @@ func TestHandlePolicyChainUpdate_RouteWithInvalidPolicy(t *testing.T) {
 func TestHandlePolicyChainUpdate_RouteWithEmptyKey(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -466,8 +449,7 @@ func TestHandlePolicyChainUpdate_RouteWithEmptyKey(t *testing.T) {
 func TestBuildPolicyChain_EmptyConfig(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -496,8 +478,7 @@ func TestBuildPolicyChain_EmptyConfig(t *testing.T) {
 func TestBuildPolicyChain_UnknownPolicy(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
@@ -506,7 +487,7 @@ func TestBuildPolicyChain_UnknownPolicy(t *testing.T) {
 		Policies: []policyenginev1.PolicyInstance{
 			{
 				Name:    "unknown-policy",
-				Version: "v1.0.0",
+				Version: "v1",
 				Enabled: true,
 			},
 		},
@@ -528,8 +509,7 @@ func TestBuildPolicyChain_UnknownPolicy(t *testing.T) {
 func TestBuildPolicyChain_MetadataPropagation(t *testing.T) {
 	k := kernel.NewKernel()
 	reg := &registry.PolicyRegistry{
-		Definitions: make(map[string]*policy.PolicyDefinition),
-		Factories:   make(map[string]policy.PolicyFactory),
+		Policies: make(map[string]*registry.PolicyEntry),
 	}
 	handler := NewResourceHandler(k, reg)
 
