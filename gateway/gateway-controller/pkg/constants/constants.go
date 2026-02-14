@@ -19,6 +19,7 @@
 package constants
 
 const (
+	PlatformGatewayId = "platform-gateway-id"
 	// XDS/Envoy Constants
 	TransportSocketPrefix   = "ts"
 	LoadBalancerIDKey       = "lb_id"
@@ -152,9 +153,7 @@ const (
 	DisplayNameMaxLength = 100
 
 	// HashingAlgorithm constants
-	HashingAlgorithmSHA256   = "sha256"
-	HashingAlgorithmBcrypt   = "bcrypt"
-	HashingAlgorithmArgon2ID = "argon2id"
+	HashingAlgorithmSHA256 = "sha256"
 
 	// System policy constants
 	ANALYTICS_SYSTEM_POLICY_NAME    = "wso2_apip_sys_analytics"
