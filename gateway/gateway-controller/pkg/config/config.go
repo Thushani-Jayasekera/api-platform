@@ -406,7 +406,7 @@ func LoadConfig(configPath string) (*Config, error) {
 		switch s {
 		case "controlplane_host":
 			return "controller.controlplane.host"
-		case "registration_token":
+		case "gateway_registration_token":
 			return "controller.controlplane.token"
 		case "reconnect_initial":
 			return "controller.controlplane.reconnect_initial"
