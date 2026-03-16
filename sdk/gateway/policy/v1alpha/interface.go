@@ -54,6 +54,37 @@ const (
 	LevelRoute Level = "route"
 )
 
+// ─── Phase-specific sub-interfaces ───────────────────────────────────────────
+//
+// Policies may optionally implement these alongside the monolithic Policy
+// interface to declare fine-grained capabilities. The kernel (and any
+// v2alpha-aware engine) can type-assert at chain-build time to discover which
+// phases a policy participates in, with zero per-request overhead.
+//
+// Implementing a sub-interface does NOT replace Mode() — Mode() must still
+// report the matching body/header mode so that the v1alpha engine buffers
+// bodies correctly.
+
+// RequestHeaderPolicy processes request headers before the body is read.
+type RequestHeaderPolicy interface {
+	OnRequestHeaders(ctx *RequestHeaderContext) RequestHeaderAction
+}
+
+// ResponseHeaderPolicy processes response headers before the body is read.
+type ResponseHeaderPolicy interface {
+	OnResponseHeaders(ctx *ResponseHeaderContext) ResponseHeaderAction
+}
+
+// RequestPolicy processes the complete buffered request body.
+type RequestPolicy interface {
+	OnRequestBody(ctx *RequestContext) RequestAction
+}
+
+// ResponsePolicy processes the complete buffered response body.
+type ResponsePolicy interface {
+	OnResponseBody(ctx *ResponseContext) ResponseAction
+}
+
 // ─── Processing mode ─────────────────────────────────────────────────────────
 
 // ProcessingMode declares a policy's processing requirements for each phase.
