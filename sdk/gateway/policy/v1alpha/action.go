@@ -115,7 +115,7 @@ type UpstreamRequestModifications struct {
 	AnalyticsHeaderFilter DropHeaderAction
 
 	// Deprecated fields — retained for backward compatibility with policies written
-	// against SDK ≤ v0.4.1. New policies should use Header and the renamed fields instead.
+	// against SDK ≤ v0.4.3. New policies should use Header and the renamed fields instead.
 
 	// Deprecated: Use Header.Set instead.
 	SetHeaders map[string]string
@@ -164,7 +164,7 @@ type DownstreamResponseModifications struct {
 	AnalyticsHeaderFilter DropHeaderAction
 
 	// Deprecated fields — retained for backward compatibility with policies written
-	// against SDK ≤ v0.4.1. New policies should use Header instead.
+	// against SDK ≤ v0.4.3. New policies should use Header instead.
 
 	// Deprecated: Use Header.Set instead.
 	SetHeaders map[string]string
@@ -183,7 +183,19 @@ func (DownstreamResponseModifications) StopExecution() bool { return false }
 // entire upstream response with the specified status, headers, and body.
 func (ImmediateResponse) isResponseAction() {}
 
-// Note: StopExecution() bool is already defined above for RequestAction.
+// Compile-time interface satisfaction checks.
+// These ensure ImmediateResponse satisfies all sealed action interfaces and that
+// the concrete modification types satisfy their respective action interfaces.
+var (
+	_ RequestHeaderAction  = UpstreamRequestHeaderModifications{}
+	_ RequestHeaderAction  = ImmediateResponse{}
+	_ ResponseHeaderAction = DownstreamResponseHeaderModifications{}
+	_ ResponseHeaderAction = ImmediateResponse{}
+	_ RequestAction        = UpstreamRequestModifications{}
+	_ RequestAction        = ImmediateResponse{}
+	_ ResponseAction       = DownstreamResponseModifications{}
+	_ ResponseAction       = ImmediateResponse{}
+)
 
 // ─── Streaming body actions ───────────────────────────────────────────────────
 //

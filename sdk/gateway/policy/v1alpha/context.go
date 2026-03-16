@@ -75,7 +75,7 @@ type RequestHeaderContext struct {
 	Vhost     string
 }
 
-// RequestBodyContext is passed to RequestBodyPolicy.OnRequestBody.
+// RequestContext is passed to RequestPolicy.OnRequestBody.
 // The complete buffered request body is available.
 type RequestContext struct {
 	*SharedContext
@@ -112,7 +112,7 @@ type ResponseHeaderContext struct {
 	ResponseStatus int
 }
 
-// ResponseBodyContext is passed to ResponseBodyPolicy.OnResponseBody.
+// ResponseContext is passed to ResponsePolicy.OnResponseBody.
 // The complete buffered response body is available.
 type ResponseContext struct {
 	*SharedContext
@@ -151,8 +151,10 @@ type StreamBody struct {
 }
 
 // RequestStreamContext is the per-chunk context passed to StreamingRequestBodyPolicy.
-// It mirrors RequestHeaderContext — headers are read-only and body data is delivered
-// one chunk at a time via the StreamBody argument.
+// It is structurally identical to RequestHeaderContext today, but kept as a distinct
+// type so that streaming-specific fields (e.g. accumulated byte count, chunk index)
+// can be added in the future without changing the header-phase contract.
+// Headers are read-only; body data arrives via the StreamBody argument, not this struct.
 type RequestStreamContext struct {
 	*SharedContext
 
