@@ -27,31 +27,37 @@ type Policy interface{}
 type PolicyFactory func(metadata v1.PolicyMetadata, params map[string]interface{}) (Policy, error)
 
 // ─── Phase-specific sub-interfaces ───────────────────────────────────────────
+//
+// Each method receives a params map for parity with the v1alpha interface and
+// to ease migration. Params are the same static values resolved at chain-build
+// time — they do not change per request. Prefer storing parsed config in the
+// policy struct inside GetPolicy rather than re-parsing params on every call.
+// TODO: remove params once all policies have migrated to the struct-based pattern.
 
 // RequestHeaderPolicy processes request headers.
 // Implement this to modify or inspect headers before the request body is read.
 type RequestHeaderPolicy interface {
-	OnRequestHeaders(ctx *v1.RequestHeaderContext) v1.RequestHeaderAction
+	OnRequestHeaders(ctx *v1.RequestHeaderContext, params map[string]interface{}) v1.RequestHeaderAction
 }
 
 // ResponseHeaderPolicy processes response headers.
 // Implement this to modify or inspect response headers before the response body is read.
 type ResponseHeaderPolicy interface {
-	OnResponseHeaders(ctx *v1.ResponseHeaderContext) v1.ResponseHeaderAction
+	OnResponseHeaders(ctx *v1.ResponseHeaderContext, params map[string]interface{}) v1.ResponseHeaderAction
 }
 
 // RequestPolicy processes the complete buffered request body.
 // If any policy in the chain implements this interface, the request body is
 // buffered before any policy in the chain executes.
 type RequestPolicy interface {
-	OnRequestBody(ctx *v1.RequestContext) v1.RequestAction
+	OnRequestBody(ctx *v1.RequestContext, params map[string]interface{}) v1.RequestAction
 }
 
 // ResponsePolicy processes the complete buffered response body.
 // If any policy in the chain implements only ResponsePolicy (not
 // StreamingResponsePolicy), the entire chain uses BUFFERED mode.
 type ResponsePolicy interface {
-	OnResponseBody(ctx *v1.ResponseContext) v1.ResponseAction
+	OnResponseBody(ctx *v1.ResponseContext, params map[string]interface{}) v1.ResponseAction
 }
 
 // StreamingRequestPolicy processes the request body chunk-by-chunk.
@@ -60,7 +66,7 @@ type ResponsePolicy interface {
 // before OnRequestBodyChunk is invoked.
 type StreamingRequestPolicy interface {
 	RequestPolicy
-	OnRequestBodyChunk(ctx *v1.RequestStreamContext, chunk *v1.StreamBody) v1.RequestChunkAction
+	OnRequestBodyChunk(ctx *v1.RequestStreamContext, chunk *v1.StreamBody, params map[string]interface{}) v1.RequestChunkAction
 	NeedsMoreRequestData(accumulated []byte) bool
 }
 
@@ -70,6 +76,6 @@ type StreamingRequestPolicy interface {
 // in the chain implements this interface.
 type StreamingResponsePolicy interface {
 	ResponsePolicy
-	OnResponseBodyChunk(ctx *v1.ResponseStreamContext, chunk *v1.StreamBody) v1.ResponseChunkAction
+	OnResponseBodyChunk(ctx *v1.ResponseStreamContext, chunk *v1.StreamBody, params map[string]interface{}) v1.ResponseChunkAction
 	NeedsMoreResponseData(accumulated []byte) bool
 }
