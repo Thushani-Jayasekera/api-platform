@@ -143,12 +143,6 @@ func (c *ChainExecutor) ExecuteRequestPolicies(traceCtx context.Context, policyL
 			}
 		}
 
-		lp, ok := pol.(policy.LegacyPolicy)
-		if !ok {
-			span.End()
-			continue
-		}
-
 		// Clone params to prevent a policy from mutating the shared spec map
 		// across concurrent requests.
 		params := make(map[string]interface{}, len(spec.Parameters.Raw))
@@ -157,7 +151,7 @@ func (c *ChainExecutor) ExecuteRequestPolicies(traceCtx context.Context, policyL
 		}
 
 		// Execute policy
-		action := lp.OnRequest(ctx, params)
+		action := normalizeRequestAction(pol.OnRequest(ctx, params))
 		executionTime := time.Since(policyStartTime)
 
 		// Record policy execution metrics
@@ -283,12 +277,6 @@ func (c *ChainExecutor) ExecuteResponsePolicies(traceCtx context.Context, policy
 			}
 		}
 
-		lp, ok := pol.(policy.LegacyPolicy)
-		if !ok {
-			span.End()
-			continue
-		}
-
 		// Clone params to prevent a policy from mutating the shared spec map
 		// across concurrent requests.
 		params := make(map[string]interface{}, len(spec.Parameters.Raw))
@@ -297,7 +285,7 @@ func (c *ChainExecutor) ExecuteResponsePolicies(traceCtx context.Context, policy
 		}
 
 		// Execute policy
-		action := lp.OnResponse(ctx, params)
+		action := normalizeResponseAction(pol.OnResponse(ctx, params))
 		executionTime := time.Since(policyStartTime)
 
 		// Record policy execution metrics
@@ -331,6 +319,29 @@ func (c *ChainExecutor) ExecuteResponsePolicies(traceCtx context.Context, policy
 
 	result.TotalExecutionTime = time.Since(startTime)
 	return result, nil
+}
+
+// normalizeRequestAction converts legacy value-type actions (returned by older policies)
+// to their pointer equivalents so that all downstream type assertions use the pointer form.
+func normalizeRequestAction(action policy.RequestAction) policy.RequestAction {
+	switch a := action.(type) {
+	case policy.UpstreamRequestModifications:
+		return &a
+	case policy.ImmediateResponse:
+		return &a
+	}
+	return action
+}
+
+// normalizeResponseAction converts legacy value-type actions to pointer form.
+func normalizeResponseAction(action policy.ResponseAction) policy.ResponseAction {
+	switch a := action.(type) {
+	case policy.DownstreamResponseModifications:
+		return &a
+	case policy.ImmediateResponse:
+		return &a
+	}
+	return action
 }
 
 // applyRequestModifications applies request modifications to context

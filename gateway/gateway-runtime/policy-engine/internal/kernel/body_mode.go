@@ -78,14 +78,12 @@ func (k *Kernel) BuildPolicyChain(routeKey string, policySpecs []policy.PolicySp
 		chain.PolicySpecs = append(chain.PolicySpecs, spec)
 
 		// Get policy mode and update body requirements
-		if lp, ok := impl.(policy.LegacyPolicy); ok {
-			mode := lp.Mode()
-			if mode == policy.ModeRequest || mode == policy.ModeRequestResponse {
-				chain.RequiresRequestBody = true
-			}
-			if mode == policy.ModeResponse || mode == policy.ModeRequestResponse {
-				chain.RequiresResponseBody = true
-			}
+		mode := impl.Mode()
+		if mode.RequestBodyMode == policy.BodyModeBuffer || mode.RequestBodyMode == policy.BodyModeStream {
+			chain.RequiresRequestBody = true
+		}
+		if mode.ResponseBodyMode == policy.BodyModeBuffer || mode.ResponseBodyMode == policy.BodyModeStream {
+			chain.RequiresResponseBody = true
 		}
 	}
 

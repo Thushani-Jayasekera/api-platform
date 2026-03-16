@@ -292,14 +292,12 @@ func (h *ResourceHandler) buildPolicyChain(routeKey string, config *policyengine
 		policySpecs = append(policySpecs, spec)
 
 		// Get policy mode and update body requirements
-		if lp, ok := impl.(policy.LegacyPolicy); ok {
-			mode := lp.Mode()
-			if mode == policy.ModeRequest || mode == policy.ModeRequestResponse {
-				requiresRequestBody = true
-			}
-			if mode == policy.ModeResponse || mode == policy.ModeRequestResponse {
-				requiresResponseBody = true
-			}
+		mode := impl.Mode()
+		if mode.RequestBodyMode == policy.BodyModeBuffer || mode.RequestBodyMode == policy.BodyModeStream {
+			requiresRequestBody = true
+		}
+		if mode.ResponseBodyMode == policy.BodyModeBuffer || mode.ResponseBodyMode == policy.BodyModeStream {
+			requiresResponseBody = true
 		}
 	}
 

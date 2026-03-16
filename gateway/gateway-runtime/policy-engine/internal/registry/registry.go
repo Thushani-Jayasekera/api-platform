@@ -24,6 +24,7 @@ import (
 
 	"github.com/wso2/api-platform/common/version"
 	policy "github.com/wso2/api-platform/sdk/gateway/policy/v1alpha"
+	policyv2 "github.com/wso2/api-platform/sdk/gateway/policy/v2alpha"
 )
 
 // PolicyEntry holds a policy definition and its factory function together
@@ -152,6 +153,21 @@ func (r *PolicyRegistry) Register(def *policy.PolicyDefinition, factory policy.P
 		Factory:    factory,
 	}
 	return nil
+}
+
+// RegisterV2 registers a v2alpha policy definition and factory.
+// The factory is wrapped in an adapter so that the chain machinery continues to
+// work with v1alpha.Policy instances throughout — the kernel never needs to
+// know whether a policy was written against v1alpha or v2alpha.
+func (r *PolicyRegistry) RegisterV2(def *policy.PolicyDefinition, factory policyv2.PolicyFactory) error {
+	adapted := func(metadata policy.PolicyMetadata, params map[string]interface{}) (policy.Policy, error) {
+		impl, err := factory(metadata, params)
+		if err != nil {
+			return nil, err
+		}
+		return newV2AlphaAdapter(impl), nil
+	}
+	return r.Register(def, adapted)
 }
 
 // SetConfig sets the configuration for resolving ${config} references in systemParameters

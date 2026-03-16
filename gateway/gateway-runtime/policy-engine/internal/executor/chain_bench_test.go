@@ -81,7 +81,10 @@ func (e *sometimesFalseCELEvaluator) EvaluateResponseCondition(string, *policy.R
 type passthroughPolicy struct{}
 
 func (p *passthroughPolicy) Mode() policy.ProcessingMode {
-	return policy.ModeRequestResponse
+	return policy.ProcessingMode{
+		RequestBodyMode:  policy.BodyModeBuffer,
+		ResponseBodyMode: policy.BodyModeBuffer,
+	}
 }
 
 func (p *passthroughPolicy) OnRequest(*policy.RequestContext, map[string]interface{}) policy.RequestAction {
@@ -96,7 +99,10 @@ func (p *passthroughPolicy) OnResponse(*policy.ResponseContext, map[string]inter
 type headerModifyPolicy struct{}
 
 func (p *headerModifyPolicy) Mode() policy.ProcessingMode {
-	return policy.ModeRequestResponse
+	return policy.ProcessingMode{
+		RequestBodyMode:  policy.BodyModeBuffer,
+		ResponseBodyMode: policy.BodyModeBuffer,
+	}
 }
 
 func (p *headerModifyPolicy) OnRequest(*policy.RequestContext, map[string]interface{}) policy.RequestAction {
@@ -116,7 +122,9 @@ func (p *headerModifyPolicy) OnResponse(*policy.ResponseContext, map[string]inte
 type shortCircuitPolicy struct{}
 
 func (p *shortCircuitPolicy) Mode() policy.ProcessingMode {
-	return policy.ModeRequest
+	return policy.ProcessingMode{
+		RequestBodyMode: policy.BodyModeBuffer,
+	}
 }
 
 func (p *shortCircuitPolicy) OnRequest(*policy.RequestContext, map[string]interface{}) policy.RequestAction {

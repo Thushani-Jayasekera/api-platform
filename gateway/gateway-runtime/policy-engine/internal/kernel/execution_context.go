@@ -148,12 +148,9 @@ func (ec *PolicyExecutionContext) getModeOverride() *extprocconfigv3.ProcessingM
 	// Set response header mode based on whether any policies process response headers
 	hasResponseHeaderProcessing := false
 	for _, pol := range ec.policyChain.Policies {
-		if lp, ok := pol.(policy.LegacyPolicy); ok {
-			m := lp.Mode()
-			if m == policy.ModeResponse || m == policy.ModeRequestResponse {
-				hasResponseHeaderProcessing = true
-				break
-			}
+		if pol.Mode().ResponseHeaderMode == policy.HeaderModeProcess {
+			hasResponseHeaderProcessing = true
+			break
 		}
 	}
 
