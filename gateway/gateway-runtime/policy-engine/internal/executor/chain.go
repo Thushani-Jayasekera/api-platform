@@ -63,6 +63,7 @@ type ResponsePolicyResult struct {
 // ResponseExecutionResult represents the result of executing all response policies in a chain
 type ResponseExecutionResult struct {
 	Results            []ResponsePolicyResult
+	ShortCircuited     bool                  // true if chain stopped early due to ImmediateResponse
 	FinalAction        policy.ResponseAction // Final action to apply
 	TotalExecutionTime time.Duration
 }
@@ -309,6 +310,18 @@ func (c *ChainExecutor) ExecuteResponsePolicies(traceCtx context.Context, policy
 
 		// Apply action if present (T046)
 		if action != nil {
+			// Check for short-circuit
+			if action.StopExecution() {
+				if span.IsRecording() {
+					span.SetAttributes(attribute.Bool(constants.AttrPolicyShortCircuit, true))
+				}
+				metrics.ShortCircuitsTotal.WithLabelValues("", spec.Name).Inc()
+				result.ShortCircuited = true
+				result.FinalAction = action
+				span.End()
+				break
+			}
+
 			if mods, ok := action.(*policy.DownstreamResponseModifications); ok {
 				applyResponseModifications(ctx, mods)
 			}
