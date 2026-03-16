@@ -9,8 +9,9 @@ type DropHeaderAction struct {
 // ─── Short-circuit ────────────────────────────────────────────────────────────
 
 // ImmediateResponse terminates the policy chain and returns a response to the
-// downstream client immediately. Embed as a pointer in HeaderAction or
-// RequestBodyAction/ResponseBodyAction; a non-nil pointer short-circuits the chain.
+// downstream client immediately. Return as *ImmediateResponse (pointer) from any
+// action method; the kernel dispatches on the pointer type via type assertion.
+// Returning nil from a method that returns a sealed action interface means "no action".
 type ImmediateResponse struct {
 	StatusCode            int
 	Headers               map[string]string
@@ -47,11 +48,11 @@ type UpstreamRequestHeaderModifications struct {
 	AnalyticsHeaderFilter DropHeaderAction          // headers to exclude from analytics
 }
 
-func (UpstreamRequestHeaderModifications) isRequestHeaderAction() {}
+func (*UpstreamRequestHeaderModifications) isRequestHeaderAction() {}
 
 // ImmediateResponse also implements RequestHeaderAction — returning it short-circuits
 // the chain and sends the response directly to the downstream client.
-func (ImmediateResponse) isRequestHeaderAction() {}
+func (*ImmediateResponse) isRequestHeaderAction() {}
 
 // ResponseHeaderAction is a sealed oneof returned by OnResponseHeaders.
 // Implement either DownstreamResponseHeaderModifications or return ImmediateResponse.
@@ -71,11 +72,11 @@ type DownstreamResponseHeaderModifications struct {
 	AnalyticsHeaderFilter DropHeaderAction          // headers to exclude from analytics
 }
 
-func (DownstreamResponseHeaderModifications) isResponseHeaderAction() {}
+func (*DownstreamResponseHeaderModifications) isResponseHeaderAction() {}
 
 // ImmediateResponse also implements ResponseHeaderAction — returning it short-circuits
 // the chain and sends the response directly to the downstream client.
-func (ImmediateResponse) isResponseHeaderAction() {}
+func (*ImmediateResponse) isResponseHeaderAction() {}
 
 // ─── Buffered body actions (sealed oneof) ────────────────────────────────────
 //
@@ -131,13 +132,13 @@ type UpstreamRequestModifications struct {
 	DropHeadersFromAnalytics DropHeaderAction
 }
 
-func (UpstreamRequestModifications) isRequestAction()    {}
-func (UpstreamRequestModifications) StopExecution() bool { return false }
+func (*UpstreamRequestModifications) isRequestAction()    {}
+func (*UpstreamRequestModifications) StopExecution() bool { return false }
 
 // ImmediateResponse also implements RequestAction — returning it short-circuits
 // the chain and sends the response directly to the downstream client.
-func (ImmediateResponse) isRequestAction()    {}
-func (ImmediateResponse) StopExecution() bool { return true }
+func (*ImmediateResponse) isRequestAction()    {}
+func (*ImmediateResponse) StopExecution() bool { return true }
 
 // ResponseAction is a sealed oneof returned by ResponsePolicy.OnResponseBody.
 // Implement either DownstreamResponseModifications or return ImmediateResponse.
@@ -176,25 +177,25 @@ type DownstreamResponseModifications struct {
 	DropHeadersFromAnalytics DropHeaderAction
 }
 
-func (DownstreamResponseModifications) isResponseAction()   {}
-func (DownstreamResponseModifications) StopExecution() bool { return false }
+func (*DownstreamResponseModifications) isResponseAction()   {}
+func (*DownstreamResponseModifications) StopExecution() bool { return false }
 
 // ImmediateResponse also implements ResponseAction — returning it replaces the
 // entire upstream response with the specified status, headers, and body.
-func (ImmediateResponse) isResponseAction() {}
+func (*ImmediateResponse) isResponseAction() {}
 
 // Compile-time interface satisfaction checks.
 // These ensure ImmediateResponse satisfies all sealed action interfaces and that
 // the concrete modification types satisfy their respective action interfaces.
 var (
-	_ RequestHeaderAction  = UpstreamRequestHeaderModifications{}
-	_ RequestHeaderAction  = ImmediateResponse{}
-	_ ResponseHeaderAction = DownstreamResponseHeaderModifications{}
-	_ ResponseHeaderAction = ImmediateResponse{}
-	_ RequestAction        = UpstreamRequestModifications{}
-	_ RequestAction        = ImmediateResponse{}
-	_ ResponseAction       = DownstreamResponseModifications{}
-	_ ResponseAction       = ImmediateResponse{}
+	_ RequestHeaderAction  = (*UpstreamRequestHeaderModifications)(nil)
+	_ RequestHeaderAction  = (*ImmediateResponse)(nil)
+	_ ResponseHeaderAction = (*DownstreamResponseHeaderModifications)(nil)
+	_ ResponseHeaderAction = (*ImmediateResponse)(nil)
+	_ RequestAction        = (*UpstreamRequestModifications)(nil)
+	_ RequestAction        = (*ImmediateResponse)(nil)
+	_ ResponseAction       = (*DownstreamResponseModifications)(nil)
+	_ ResponseAction       = (*ImmediateResponse)(nil)
 )
 
 // ─── Streaming body actions ───────────────────────────────────────────────────

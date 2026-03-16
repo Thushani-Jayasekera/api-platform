@@ -415,7 +415,7 @@ type trackingPolicyImpl struct {
 }
 
 func (p *trackingPolicyImpl) Mode() policy.ProcessingMode {
-	return policy.ProcessingMode{}
+	return policy.ModeRequestResponse
 }
 
 func (p *trackingPolicyImpl) OnRequest(*policy.RequestContext, map[string]interface{}) policy.RequestAction {
@@ -553,7 +553,7 @@ func TestApplyRequestModifications_RemoveQueryParameters(t *testing.T) {
 
 func TestApplyResponseModifications_SetHeaders(t *testing.T) {
 	ctx := testutils.NewTestResponseContext()
-	mods := policy.UpstreamResponseModifications{
+	mods := policy.DownstreamResponseModifications{
 		SetHeaders: map[string]string{
 			"x-response-header": "response-value",
 		},
@@ -568,7 +568,7 @@ func TestApplyResponseModifications_SetHeaders(t *testing.T) {
 
 func TestApplyResponseModifications_RemoveHeaders(t *testing.T) {
 	ctx := testutils.NewTestResponseContext()
-	mods := policy.UpstreamResponseModifications{
+	mods := policy.DownstreamResponseModifications{
 		RemoveHeaders: []string{"content-type"},
 	}
 
@@ -580,7 +580,7 @@ func TestApplyResponseModifications_RemoveHeaders(t *testing.T) {
 
 func TestApplyResponseModifications_AppendHeaders(t *testing.T) {
 	ctx := testutils.NewTestResponseContext()
-	mods := policy.UpstreamResponseModifications{
+	mods := policy.DownstreamResponseModifications{
 		AppendHeaders: map[string][]string{
 			"x-multi-resp": {"val1", "val2"},
 		},
@@ -595,7 +595,7 @@ func TestApplyResponseModifications_AppendHeaders(t *testing.T) {
 func TestApplyResponseModifications_UpdateBody(t *testing.T) {
 	ctx := testutils.NewTestResponseContext()
 	newBody := []byte(`{"response": "modified"}`)
-	mods := policy.UpstreamResponseModifications{
+	mods := policy.DownstreamResponseModifications{
 		Body: newBody,
 	}
 
@@ -610,7 +610,7 @@ func TestApplyResponseModifications_UpdateBody(t *testing.T) {
 func TestApplyResponseModifications_UpdateStatusCode(t *testing.T) {
 	ctx := testutils.NewTestResponseContext()
 	newStatus := 404
-	mods := policy.UpstreamResponseModifications{
+	mods := policy.DownstreamResponseModifications{
 		StatusCode: &newStatus,
 	}
 

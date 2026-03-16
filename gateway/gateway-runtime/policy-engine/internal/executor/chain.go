@@ -143,8 +143,21 @@ func (c *ChainExecutor) ExecuteRequestPolicies(traceCtx context.Context, policyL
 			}
 		}
 
+		lp, ok := pol.(policy.LegacyPolicy)
+		if !ok {
+			span.End()
+			continue
+		}
+
+		// Clone params to prevent a policy from mutating the shared spec map
+		// across concurrent requests.
+		params := make(map[string]interface{}, len(spec.Parameters.Raw))
+		for k, v := range spec.Parameters.Raw {
+			params[k] = v
+		}
+
 		// Execute policy
-		action := pol.OnRequest(ctx, spec.Parameters.Raw)
+		action := lp.OnRequest(ctx, params)
 		executionTime := time.Since(policyStartTime)
 
 		// Record policy execution metrics
@@ -181,8 +194,8 @@ func (c *ChainExecutor) ExecuteRequestPolicies(traceCtx context.Context, policyL
 			}
 
 			// Apply modifications to context (T045)
-			if mods, ok := action.(policy.UpstreamRequestModifications); ok {
-				applyRequestModifications(ctx, &mods)
+			if mods, ok := action.(*policy.UpstreamRequestModifications); ok {
+				applyRequestModifications(ctx, mods)
 			}
 		}
 
@@ -270,8 +283,21 @@ func (c *ChainExecutor) ExecuteResponsePolicies(traceCtx context.Context, policy
 			}
 		}
 
+		lp, ok := pol.(policy.LegacyPolicy)
+		if !ok {
+			span.End()
+			continue
+		}
+
+		// Clone params to prevent a policy from mutating the shared spec map
+		// across concurrent requests.
+		params := make(map[string]interface{}, len(spec.Parameters.Raw))
+		for k, v := range spec.Parameters.Raw {
+			params[k] = v
+		}
+
 		// Execute policy
-		action := pol.OnResponse(ctx, spec.Parameters.Raw)
+		action := lp.OnResponse(ctx, params)
 		executionTime := time.Since(policyStartTime)
 
 		// Record policy execution metrics
@@ -295,8 +321,8 @@ func (c *ChainExecutor) ExecuteResponsePolicies(traceCtx context.Context, policy
 
 		// Apply action if present (T046)
 		if action != nil {
-			if mods, ok := action.(policy.UpstreamResponseModifications); ok {
-				applyResponseModifications(ctx, &mods)
+			if mods, ok := action.(*policy.DownstreamResponseModifications); ok {
+				applyResponseModifications(ctx, mods)
 			}
 		}
 
@@ -367,7 +393,7 @@ func applyRequestModifications(ctx *policy.RequestContext, mods *policy.Upstream
 
 // applyResponseModifications applies response modifications to context
 // T046: Implements response context modification
-func applyResponseModifications(ctx *policy.ResponseContext, mods *policy.UpstreamResponseModifications) {
+func applyResponseModifications(ctx *policy.ResponseContext, mods *policy.DownstreamResponseModifications) {
 	// Get direct access to response headers for mutation (kernel-only API)
 	headers := ctx.ResponseHeaders.UnsafeInternalValues()
 

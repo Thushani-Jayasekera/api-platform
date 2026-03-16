@@ -61,7 +61,7 @@ func translateRequestActionsCore(result *executor.RequestExecutionResult, execCt
 
 	// Check for short-circuit with immediate response
 	if result.ShortCircuited && result.FinalAction != nil {
-		if immResp, ok := result.FinalAction.(policy.ImmediateResponse); ok {
+		if immResp, ok := result.FinalAction.(*policy.ImmediateResponse); ok {
 			response := &extprocv3.ProcessingResponse{
 				Response: &extprocv3.ProcessingResponse_ImmediateResponse{
 					ImmediateResponse: &extprocv3.ImmediateResponse{
@@ -102,7 +102,7 @@ func translateRequestActionsCore(result *executor.RequestExecutionResult, execCt
 		}
 
 		if policyResult.Action != nil {
-			if mods, ok := policyResult.Action.(policy.UpstreamRequestModifications); ok {
+			if mods, ok := policyResult.Action.(*policy.UpstreamRequestModifications); ok {
 				// Collect SetHeader operations
 				for key, value := range mods.SetHeaders {
 					headerOps[strings.ToLower(key)] = append(headerOps[strings.ToLower(key)], &headerOp{opType: "set", value: value})
@@ -395,7 +395,7 @@ func translateResponseActionsCore(result *executor.ResponseExecutionResult, exec
 		}
 
 		if policyResult.Action != nil {
-			if mods, ok := policyResult.Action.(policy.UpstreamResponseModifications); ok {
+			if mods, ok := policyResult.Action.(*policy.DownstreamResponseModifications); ok {
 				// Collect SetHeader operations
 				for key, value := range mods.SetHeaders {
 					headerOps[strings.ToLower(key)] = append(headerOps[strings.ToLower(key)], &headerOp{opType: "set", value: value})
