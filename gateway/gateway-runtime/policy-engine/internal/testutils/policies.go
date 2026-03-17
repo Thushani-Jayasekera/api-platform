@@ -32,10 +32,7 @@ type NoopPolicy struct{}
 
 // Mode returns a ProcessingMode that buffers both request and response body.
 func (p *NoopPolicy) Mode() policy.ProcessingMode {
-	return policy.ProcessingMode{
-		RequestBodyMode:  policy.BodyModeBuffer,
-		ResponseBodyMode: policy.BodyModeBuffer,
-	}
+	return policy.ProcessingMode{}
 }
 
 // OnRequest returns nil (no action).
@@ -58,11 +55,11 @@ type HeaderModifyingPolicy struct {
 	Value string
 }
 
-// Mode returns a ProcessingMode that buffers both request and response body.
+// Mode returns a ProcessingMode that processes request and response headers.
 func (p *HeaderModifyingPolicy) Mode() policy.ProcessingMode {
 	return policy.ProcessingMode{
-		RequestBodyMode:  policy.BodyModeBuffer,
-		ResponseBodyMode: policy.BodyModeBuffer,
+		RequestHeaderMode:  policy.HeaderModeProcess,
+		ResponseHeaderMode: policy.HeaderModeProcess,
 	}
 }
 
@@ -93,7 +90,7 @@ type ShortCircuitingPolicy struct {
 // Mode returns a ProcessingMode that buffers the request body.
 func (p *ShortCircuitingPolicy) Mode() policy.ProcessingMode {
 	return policy.ProcessingMode{
-		RequestBodyMode: policy.BodyModeBuffer,
+		RequestHeaderMode: policy.HeaderModeProcess,
 	}
 }
 
@@ -156,10 +153,7 @@ type SimpleMockPolicy struct {
 
 // Mode returns a ProcessingMode that buffers both request and response body.
 func (m *SimpleMockPolicy) Mode() policy.ProcessingMode {
-	return policy.ProcessingMode{
-		RequestBodyMode:  policy.BodyModeBuffer,
-		ResponseBodyMode: policy.BodyModeBuffer,
-	}
+	return policy.ProcessingMode{}
 }
 
 // OnRequest returns nil (no action).

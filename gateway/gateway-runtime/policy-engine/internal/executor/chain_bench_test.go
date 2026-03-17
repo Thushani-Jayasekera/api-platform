@@ -82,8 +82,10 @@ type passthroughPolicy struct{}
 
 func (p *passthroughPolicy) Mode() policy.ProcessingMode {
 	return policy.ProcessingMode{
-		RequestBodyMode:  policy.BodyModeBuffer,
-		ResponseBodyMode: policy.BodyModeBuffer,
+		RequestHeaderMode:  policy.HeaderModeProcess,
+		RequestBodyMode:    policy.BodyModeSkip,
+		ResponseHeaderMode: policy.HeaderModeProcess,
+		ResponseBodyMode:   policy.BodyModeSkip,
 	}
 }
 
@@ -100,8 +102,10 @@ type headerModifyPolicy struct{}
 
 func (p *headerModifyPolicy) Mode() policy.ProcessingMode {
 	return policy.ProcessingMode{
-		RequestBodyMode:  policy.BodyModeBuffer,
-		ResponseBodyMode: policy.BodyModeBuffer,
+		RequestHeaderMode:  policy.HeaderModeProcess,
+		RequestBodyMode:    policy.BodyModeSkip,
+		ResponseHeaderMode: policy.HeaderModeProcess,
+		ResponseBodyMode:   policy.BodyModeSkip,
 	}
 }
 
@@ -123,7 +127,10 @@ type shortCircuitPolicy struct{}
 
 func (p *shortCircuitPolicy) Mode() policy.ProcessingMode {
 	return policy.ProcessingMode{
-		RequestBodyMode: policy.BodyModeBuffer,
+		RequestHeaderMode:  policy.HeaderModeProcess,
+		RequestBodyMode:    policy.BodyModeSkip,
+		ResponseHeaderMode: policy.HeaderModeSkip,
+		ResponseBodyMode:   policy.BodyModeSkip,
 	}
 }
 

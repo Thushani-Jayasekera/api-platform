@@ -415,10 +415,7 @@ type trackingPolicyImpl struct {
 }
 
 func (p *trackingPolicyImpl) Mode() policy.ProcessingMode {
-	return policy.ProcessingMode{
-		RequestBodyMode:  policy.BodyModeBuffer,
-		ResponseBodyMode: policy.BodyModeBuffer,
-	}
+	return policy.ProcessingMode{}
 }
 
 func (p *trackingPolicyImpl) OnRequest(*policy.RequestContext, map[string]interface{}) policy.RequestAction {

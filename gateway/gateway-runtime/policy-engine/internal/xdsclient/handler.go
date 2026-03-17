@@ -203,7 +203,9 @@ func (h *ResourceHandler) convertStoredConfigToPolicyChains(stored *StoredPolicy
 	return configs
 }
 
-// validatePolicyChainConfig validates a PolicyChain configuration
+// validatePolicyChainConfig validates a PolicyChain configuration.
+// Only checks structural requirements (non-empty route key, name, version).
+// Policy existence is handled gracefully in buildPolicyChain.
 func (h *ResourceHandler) validatePolicyChainConfig(config *policyenginev1.PolicyChain) error {
 	if config.RouteKey == "" {
 		return fmt.Errorf("route_key is required")
@@ -267,8 +269,12 @@ func (h *ResourceHandler) buildPolicyChain(routeKey string, config *policyengine
 		// CreateInstance returns the policy and merged params (initParams + runtime params)
 		impl, mergedParams, err := h.registry.CreateInstance(policyConfig.Name, policyConfig.Version, metadata, policyConfig.Parameters)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create policy instance %s:%s for route %s: %w",
-				policyConfig.Name, policyConfig.Version, routeKey, err)
+			slog.ErrorContext(context.Background(), "Unknown policy skipped when building chain — check policy name/version",
+				"route", routeKey,
+				"policy", policyConfig.Name,
+				"version", policyConfig.Version,
+				"error", err)
+			continue
 		}
 
 		// Build PolicySpec with merged params so OnRequest/OnResponse receive merged values

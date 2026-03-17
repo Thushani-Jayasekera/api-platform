@@ -20,6 +20,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/wso2/api-platform/gateway/gateway-runtime/policy-engine/internal/utils"
 	"time"
@@ -144,11 +145,12 @@ func (c *ChainExecutor) ExecuteRequestPolicies(traceCtx context.Context, policyL
 			}
 		}
 
-		// Clone params to prevent a policy from mutating the shared spec map
-		// across concurrent requests.
-		params := make(map[string]interface{}, len(spec.Parameters.Raw))
-		for k, v := range spec.Parameters.Raw {
-			params[k] = v
+		// Deep-copy params to prevent a policy from mutating the shared spec map
+		// across concurrent requests (nested maps/slices require a full deep copy).
+		params, err := deepCopyParams(spec.Parameters.Raw)
+		if err != nil {
+			span.End()
+			return nil, fmt.Errorf("failed to clone parameters for policy %s:%s: %w", spec.Name, spec.Version, err)
 		}
 
 		// Execute policy
@@ -278,11 +280,12 @@ func (c *ChainExecutor) ExecuteResponsePolicies(traceCtx context.Context, policy
 			}
 		}
 
-		// Clone params to prevent a policy from mutating the shared spec map
-		// across concurrent requests.
-		params := make(map[string]interface{}, len(spec.Parameters.Raw))
-		for k, v := range spec.Parameters.Raw {
-			params[k] = v
+		// Deep-copy params to prevent a policy from mutating the shared spec map
+		// across concurrent requests (nested maps/slices require a full deep copy).
+		params, err := deepCopyParams(spec.Parameters.Raw)
+		if err != nil {
+			span.End()
+			return nil, fmt.Errorf("failed to clone parameters for policy %s:%s: %w", spec.Name, spec.Version, err)
 		}
 
 		// Execute policy
@@ -363,23 +366,37 @@ func applyRequestModifications(ctx *policy.RequestContext, mods *policy.Upstream
 	// Get direct access to headers for mutation (kernel-only API)
 	headers := ctx.Headers.UnsafeInternalValues()
 
-	// Set headers (replace existing)
+	// Set headers (replace existing) — deprecated flat field
 	if mods.SetHeaders != nil {
 		for key, value := range mods.SetHeaders {
 			headers[key] = []string{value}
 		}
 	}
 
-	// Remove headers
+	// Remove headers — deprecated flat field
 	if mods.RemoveHeaders != nil {
 		for _, key := range mods.RemoveHeaders {
 			delete(headers, key)
 		}
 	}
 
-	// Append headers
+	// Append headers — deprecated flat field
 	if mods.AppendHeaders != nil {
 		for key, values := range mods.AppendHeaders {
+			existing := headers[key]
+			headers[key] = append(existing, values...)
+		}
+	}
+
+	// Header sub-struct (new API)
+	if mods.Header != nil {
+		for key, value := range mods.Header.Set {
+			headers[key] = []string{value}
+		}
+		for _, key := range mods.Header.Remove {
+			delete(headers, key)
+		}
+		for key, values := range mods.Header.Append {
 			existing := headers[key]
 			headers[key] = append(existing, values...)
 		}
@@ -421,23 +438,37 @@ func applyResponseModifications(ctx *policy.ResponseContext, mods *policy.Downst
 	// Get direct access to response headers for mutation (kernel-only API)
 	headers := ctx.ResponseHeaders.UnsafeInternalValues()
 
-	// Set headers (replace existing)
+	// Set headers (replace existing) — deprecated flat field
 	if mods.SetHeaders != nil {
 		for key, value := range mods.SetHeaders {
 			headers[key] = []string{value}
 		}
 	}
 
-	// Remove headers
+	// Remove headers — deprecated flat field
 	if mods.RemoveHeaders != nil {
 		for _, key := range mods.RemoveHeaders {
 			delete(headers, key)
 		}
 	}
 
-	// Append headers
+	// Append headers — deprecated flat field
 	if mods.AppendHeaders != nil {
 		for key, values := range mods.AppendHeaders {
+			existing := headers[key]
+			headers[key] = append(existing, values...)
+		}
+	}
+
+	// Header sub-struct (new API)
+	if mods.Header != nil {
+		for key, value := range mods.Header.Set {
+			headers[key] = []string{value}
+		}
+		for _, key := range mods.Header.Remove {
+			delete(headers, key)
+		}
+		for key, values := range mods.Header.Append {
 			existing := headers[key]
 			headers[key] = append(existing, values...)
 		}
@@ -479,4 +510,21 @@ func NewChainExecutor(reg *registry.PolicyRegistry, celEvaluator CELEvaluator, t
 		celEvaluator: celEvaluator,
 		tracer:       tracer,
 	}
+}
+
+// deepCopyParams returns a deep copy of a map[string]interface{} via JSON round-trip,
+// ensuring nested maps and slices are not shared across concurrent requests.
+func deepCopyParams(src map[string]interface{}) (map[string]interface{}, error) {
+	if len(src) == 0 {
+		return make(map[string]interface{}), nil
+	}
+	b, err := json.Marshal(src)
+	if err != nil {
+		return nil, err
+	}
+	var dst map[string]interface{}
+	if err := json.Unmarshal(b, &dst); err != nil {
+		return nil, err
+	}
+	return dst, nil
 }
