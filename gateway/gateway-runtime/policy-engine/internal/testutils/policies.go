@@ -30,7 +30,7 @@ import (
 // Useful for testing policy chains without side effects.
 type NoopPolicy struct{}
 
-// Mode returns a ProcessingMode that buffers both request and response body.
+// Mode returns an empty ProcessingMode — no phases are processed.
 func (p *NoopPolicy) Mode() policy.ProcessingMode {
 	return policy.ProcessingMode{}
 }
@@ -87,7 +87,7 @@ type ShortCircuitingPolicy struct {
 	Body       []byte
 }
 
-// Mode returns a ProcessingMode that buffers the request body.
+// Mode returns a ProcessingMode that processes request headers only.
 func (p *ShortCircuitingPolicy) Mode() policy.ProcessingMode {
 	return policy.ProcessingMode{
 		RequestHeaderMode: policy.HeaderModeProcess,
@@ -151,7 +151,7 @@ type SimpleMockPolicy struct {
 	Version string
 }
 
-// Mode returns a ProcessingMode that buffers both request and response body.
+// Mode returns an empty ProcessingMode — no phases are processed.
 func (m *SimpleMockPolicy) Mode() policy.ProcessingMode {
 	return policy.ProcessingMode{}
 }

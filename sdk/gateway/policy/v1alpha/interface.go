@@ -67,22 +67,22 @@ const (
 
 // RequestHeaderPolicy processes request headers before the body is read.
 type RequestHeaderPolicy interface {
-	OnRequestHeaders(ctx *RequestHeaderContext) RequestHeaderAction
+	OnRequestHeaders(ctx *RequestHeaderContext, params map[string]interface{}) RequestHeaderAction
 }
 
 // ResponseHeaderPolicy processes response headers before the body is read.
 type ResponseHeaderPolicy interface {
-	OnResponseHeaders(ctx *ResponseHeaderContext) ResponseHeaderAction
+	OnResponseHeaders(ctx *ResponseHeaderContext, params map[string]interface{}) ResponseHeaderAction
 }
 
 // RequestPolicy processes the complete buffered request body.
 type RequestPolicy interface {
-	OnRequestBody(ctx *RequestContext) RequestAction
+	OnRequestBody(ctx *RequestContext, params map[string]interface{}) RequestAction
 }
 
 // ResponsePolicy processes the complete buffered response body.
 type ResponsePolicy interface {
-	OnResponseBody(ctx *ResponseContext) ResponseAction
+	OnResponseBody(ctx *ResponseContext, params map[string]interface{}) ResponseAction
 }
 
 // ─── Processing mode ─────────────────────────────────────────────────────────

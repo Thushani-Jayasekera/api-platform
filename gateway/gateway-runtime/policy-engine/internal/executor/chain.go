@@ -512,8 +512,15 @@ func NewChainExecutor(reg *registry.PolicyRegistry, celEvaluator CELEvaluator, t
 	}
 }
 
-// deepCopyParams returns a deep copy of a map[string]interface{} via JSON round-trip,
-// ensuring nested maps and slices are not shared across concurrent requests.
+// deepCopyParams returns a deep copy of a map[string]interface{} via a JSON round-trip.
+//
+// A shallow copy (e.g. maps.Clone) is not sufficient because params can contain nested
+// maps or slices — if a policy mutates a nested value, the change would bleed into
+// subsequent concurrent requests that share the same PolicySpec.Parameters.Raw map.
+//
+// Trade-off: the JSON marshal/unmarshal adds a small per-request allocation cost.
+// This is acceptable given that params are typically small config objects. If profiling
+// shows this is a hot path, consider a lazy copy-on-write approach at the policy level.
 func deepCopyParams(src map[string]interface{}) (map[string]interface{}, error) {
 	if len(src) == 0 {
 		return make(map[string]interface{}), nil

@@ -61,9 +61,10 @@ type ResponsePolicy interface {
 }
 
 // StreamingRequestPolicy processes the request body chunk-by-chunk.
-// Must also implement RequestPolicy as a buffered fallback.
-// NeedsMoreRequestData is called after each chunk; return true to accumulate
-// before OnRequestBodyChunk is invoked.
+// RequestPolicy is embedded as a buffered fallback — the kernel calls
+// OnRequestBody when streaming is not possible (e.g. the chain has a
+// non-streaming policy). NeedsMoreRequestData is called after each chunk;
+// return true to accumulate before OnRequestBodyChunk is invoked.
 type StreamingRequestPolicy interface {
 	RequestPolicy
 	OnRequestBodyChunk(ctx *v1.RequestStreamContext, chunk *v1.StreamBody, params map[string]interface{}) v1.RequestChunkAction
@@ -71,9 +72,10 @@ type StreamingRequestPolicy interface {
 }
 
 // StreamingResponsePolicy processes the response body chunk-by-chunk.
-// Must also implement ResponsePolicy as a buffered fallback.
+// ResponsePolicy is embedded as a buffered fallback — the kernel falls back to
+// buffered mode when any policy in the chain does not implement this interface.
 // The kernel upgrades to FULL_DUPLEX_STREAMED only when every response policy
-// in the chain implements this interface.
+// in the chain implements StreamingResponsePolicy.
 type StreamingResponsePolicy interface {
 	ResponsePolicy
 	OnResponseBodyChunk(ctx *v1.ResponseStreamContext, chunk *v1.StreamBody, params map[string]interface{}) v1.ResponseChunkAction

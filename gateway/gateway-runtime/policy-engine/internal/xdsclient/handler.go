@@ -269,12 +269,10 @@ func (h *ResourceHandler) buildPolicyChain(routeKey string, config *policyengine
 		// CreateInstance returns the policy and merged params (initParams + runtime params)
 		impl, mergedParams, err := h.registry.CreateInstance(policyConfig.Name, policyConfig.Version, metadata, policyConfig.Parameters)
 		if err != nil {
-			slog.ErrorContext(context.Background(), "Unknown policy skipped when building chain — check policy name/version",
-				"route", routeKey,
-				"policy", policyConfig.Name,
-				"version", policyConfig.Version,
-				"error", err)
-			continue
+			// Fail the entire chain rather than silently omitting a policy.
+			// A security policy (e.g. api-key-auth) that fails to instantiate must not
+			// be silently skipped — doing so would let traffic pass without that policy.
+			return nil, fmt.Errorf("failed to create policy instance %s:%s: %w", policyConfig.Name, policyConfig.Version, err)
 		}
 
 		// Build PolicySpec with merged params so OnRequest/OnResponse receive merged values

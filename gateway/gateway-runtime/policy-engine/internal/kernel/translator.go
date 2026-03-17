@@ -506,14 +506,6 @@ func translateResponseActionsCore(result *executor.ResponseExecutionResult, exec
 						mergeDynamicMetadata(dynamicMetadata, mods.Header.DynamicMetadata)
 						mergeDynamicMetadata(execCtx.dynamicMetadata, mods.Header.DynamicMetadata)
 					}
-					if headerDropAction := mods.Header.AnalyticsHeaderFilter; headerDropAction.Action != "" || len(headerDropAction.Headers) > 0 {
-						originalHeaders := execCtx.responseContext.ResponseHeaders.GetAll()
-						finalizedHeaders := finalizeAnalyticsHeaders(headerDropAction, originalHeaders)
-						analyticsData["response_headers"] = finalizedHeaders
-						if _, exists := execCtx.analyticsMetadata["request_headers"]; exists {
-							analyticsData["request_headers"] = execCtx.analyticsMetadata["request_headers"]
-						}
-					}
 				}
 
 				// Handle body modifications (last one wins)
@@ -545,10 +537,16 @@ func translateResponseActionsCore(result *executor.ResponseExecutionResult, exec
 					mergeDynamicMetadata(execCtx.dynamicMetadata, mods.DynamicMetadata)
 				}
 
-				// Prefer the new AnalyticsHeaderFilter field; fall back to deprecated DropHeadersFromAnalytics.
+				// Resolve analytics header filter with explicit precedence (single write to avoid silent overwrite):
+				//   1. mods.AnalyticsHeaderFilter        - preferred flat field
+				//   2. mods.DropHeadersFromAnalytics     - deprecated flat field (fallback)
+				//   3. mods.Header.AnalyticsHeaderFilter - Header sub-struct (lowest priority)
 				dropAction := mods.AnalyticsHeaderFilter
 				if dropAction.Action == "" && len(dropAction.Headers) == 0 {
 					dropAction = mods.DropHeadersFromAnalytics
+				}
+				if dropAction.Action == "" && len(dropAction.Headers) == 0 && mods.Header != nil {
+					dropAction = mods.Header.AnalyticsHeaderFilter
 				}
 				if dropAction.Action != "" || len(dropAction.Headers) > 0 {
 					slog.Debug("Translator: Found analytics header filter action (RESPONSE)",
@@ -556,14 +554,12 @@ func translateResponseActionsCore(result *executor.ResponseExecutionResult, exec
 						"headers", dropAction.Headers,
 						"headers_count", len(dropAction.Headers))
 
-					// Set the finalized headers to the analytics data
 					originalHeaders := execCtx.responseContext.ResponseHeaders.GetAll()
 					finalizedHeaders := finalizeAnalyticsHeaders(dropAction, originalHeaders)
 					analyticsData["response_headers"] = finalizedHeaders
 
 					// Include request_headers from execution context if it was set in a previous phase
 					if _, exists := execCtx.analyticsMetadata["request_headers"]; exists {
-						slog.Debug("Translator: Including request_headers from execution context")
 						analyticsData["request_headers"] = execCtx.analyticsMetadata["request_headers"]
 					}
 				}
