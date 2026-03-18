@@ -388,20 +388,6 @@ func applyRequestModifications(ctx *policy.RequestContext, mods *policy.Upstream
 		}
 	}
 
-	// Header sub-struct (new API)
-	if mods.Header != nil {
-		for key, value := range mods.Header.Set {
-			headers[key] = []string{value}
-		}
-		for _, key := range mods.Header.Remove {
-			delete(headers, key)
-		}
-		for key, values := range mods.Header.Append {
-			existing := headers[key]
-			headers[key] = append(existing, values...)
-		}
-	}
-
 	// Update body (nil = no change, []byte{} = clear)
 	if mods.Body != nil {
 		ctx.Body = &policy.Body{
@@ -455,20 +441,6 @@ func applyResponseModifications(ctx *policy.ResponseContext, mods *policy.Downst
 	// Append headers — deprecated flat field
 	if mods.AppendHeaders != nil {
 		for key, values := range mods.AppendHeaders {
-			existing := headers[key]
-			headers[key] = append(existing, values...)
-		}
-	}
-
-	// Header sub-struct (new API)
-	if mods.Header != nil {
-		for key, value := range mods.Header.Set {
-			headers[key] = []string{value}
-		}
-		for _, key := range mods.Header.Remove {
-			delete(headers, key)
-		}
-		for key, values := range mods.Header.Append {
 			existing := headers[key]
 			headers[key] = append(existing, values...)
 		}

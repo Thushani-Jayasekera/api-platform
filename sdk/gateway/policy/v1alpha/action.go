@@ -101,7 +101,8 @@ type RequestAction interface {
 type UpstreamRequestModifications struct {
 	Body []byte // nil = passthrough; []byte{} = clear body
 
-	// Header mutations — valid because the request has not left yet.
+	// Header allows modifying upstream request headers alongside body modifications.
+	// Prefer this over the deprecated flat SetHeaders/RemoveHeaders/AppendHeaders fields.
 	Header *UpstreamRequestHeaderModifications
 
 	// Routing mutations (also valid before the request is forwarded).
@@ -156,8 +157,8 @@ type DownstreamResponseModifications struct {
 	Body       []byte // nil = passthrough; []byte{} = clear body
 	StatusCode *int   // nil = no change
 
-	// Header mutations applied to the response — valid because the response has
-	// not yet been forwarded to the downstream client.
+	// Header allows modifying downstream response headers alongside body modifications.
+	// Prefer this over the deprecated flat SetHeaders/RemoveHeaders/AppendHeaders fields.
 	Header *DownstreamResponseHeaderModifications
 
 	AnalyticsMetadata     map[string]any

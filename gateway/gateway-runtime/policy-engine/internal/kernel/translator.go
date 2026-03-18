@@ -120,36 +120,6 @@ func translateRequestActionsCore(result *executor.RequestExecutionResult, execCt
 					headerOps[strings.ToLower(key)] = append(headerOps[strings.ToLower(key)], &headerOp{opType: "remove", value: ""})
 				}
 
-				// Collect header operations from the new Header sub-struct
-				if mods.Header != nil {
-					for key, value := range mods.Header.Set {
-						headerOps[strings.ToLower(key)] = append(headerOps[strings.ToLower(key)], &headerOp{opType: "set", value: value})
-					}
-					for key, values := range mods.Header.Append {
-						for _, value := range values {
-							headerOps[strings.ToLower(key)] = append(headerOps[strings.ToLower(key)], &headerOp{opType: "append", value: value})
-						}
-					}
-					for _, key := range mods.Header.Remove {
-						headerOps[strings.ToLower(key)] = append(headerOps[strings.ToLower(key)], &headerOp{opType: "remove", value: ""})
-					}
-					if mods.Header.AnalyticsMetadata != nil {
-						for key, value := range mods.Header.AnalyticsMetadata {
-							analyticsData[key] = value
-							execCtx.analyticsMetadata[key] = value
-						}
-					}
-					if mods.Header.DynamicMetadata != nil {
-						mergeDynamicMetadata(dynamicMetadata, mods.Header.DynamicMetadata)
-						mergeDynamicMetadata(execCtx.dynamicMetadata, mods.Header.DynamicMetadata)
-					}
-					if headerDropAction := mods.Header.AnalyticsHeaderFilter; headerDropAction.Action != "" || len(headerDropAction.Headers) > 0 {
-						originalHeaders := execCtx.requestContext.Headers.GetAll()
-						finalizedHeaders := finalizeAnalyticsHeaders(headerDropAction, originalHeaders)
-						analyticsData["request_headers"] = finalizedHeaders
-						execCtx.analyticsMetadata["request_headers"] = finalizedHeaders
-					}
-				}
 
 				// Handle body modifications (last one wins)
 				if mods.Body != nil {
@@ -484,29 +454,6 @@ func translateResponseActionsCore(result *executor.ResponseExecutionResult, exec
 					headerOps[strings.ToLower(key)] = append(headerOps[strings.ToLower(key)], &headerOp{opType: "remove", value: ""})
 				}
 
-				// Collect header operations from the new Header sub-struct
-				if mods.Header != nil {
-					for key, value := range mods.Header.Set {
-						headerOps[strings.ToLower(key)] = append(headerOps[strings.ToLower(key)], &headerOp{opType: "set", value: value})
-					}
-					for key, values := range mods.Header.Append {
-						for _, value := range values {
-							headerOps[strings.ToLower(key)] = append(headerOps[strings.ToLower(key)], &headerOp{opType: "append", value: value})
-						}
-					}
-					for _, key := range mods.Header.Remove {
-						headerOps[strings.ToLower(key)] = append(headerOps[strings.ToLower(key)], &headerOp{opType: "remove", value: ""})
-					}
-					if mods.Header.AnalyticsMetadata != nil {
-						for key, value := range mods.Header.AnalyticsMetadata {
-							analyticsData[key] = value
-						}
-					}
-					if mods.Header.DynamicMetadata != nil {
-						mergeDynamicMetadata(dynamicMetadata, mods.Header.DynamicMetadata)
-						mergeDynamicMetadata(execCtx.dynamicMetadata, mods.Header.DynamicMetadata)
-					}
-				}
 
 				// Handle body modifications (last one wins)
 				if mods.Body != nil {
@@ -537,16 +484,10 @@ func translateResponseActionsCore(result *executor.ResponseExecutionResult, exec
 					mergeDynamicMetadata(execCtx.dynamicMetadata, mods.DynamicMetadata)
 				}
 
-				// Resolve analytics header filter with explicit precedence (single write to avoid silent overwrite):
-				//   1. mods.AnalyticsHeaderFilter        - preferred flat field
-				//   2. mods.DropHeadersFromAnalytics     - deprecated flat field (fallback)
-				//   3. mods.Header.AnalyticsHeaderFilter - Header sub-struct (lowest priority)
+				// Prefer the new AnalyticsHeaderFilter field; fall back to deprecated DropHeadersFromAnalytics.
 				dropAction := mods.AnalyticsHeaderFilter
 				if dropAction.Action == "" && len(dropAction.Headers) == 0 {
 					dropAction = mods.DropHeadersFromAnalytics
-				}
-				if dropAction.Action == "" && len(dropAction.Headers) == 0 && mods.Header != nil {
-					dropAction = mods.Header.AnalyticsHeaderFilter
 				}
 				if dropAction.Action != "" || len(dropAction.Headers) > 0 {
 					slog.Debug("Translator: Found analytics header filter action (RESPONSE)",
