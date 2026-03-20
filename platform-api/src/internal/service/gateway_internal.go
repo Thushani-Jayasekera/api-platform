@@ -71,25 +71,6 @@ func NewGatewayInternalAPIService(apiRepo repository.APIRepository, subscription
 	}
 }
 
-// GetAPIsByOrganization retrieves all APIs for a specific organization (used by gateways)
-func (s *GatewayInternalAPIService) GetAPIsByOrganization(orgID string) (map[string]string, error) {
-	// Get all APIs for the organization
-	apis, err := s.apiRepo.GetAPIsByOrganizationUUID(orgID, "")
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve APIs: %w", err)
-	}
-
-	apiYamlMap := make(map[string]string)
-	for _, api := range apis {
-		apiYaml, err := s.apiUtil.GenerateAPIDeploymentYAML(api)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate API YAML: %w", err)
-		}
-		apiYamlMap[api.ID] = apiYaml
-	}
-	return apiYamlMap, nil
-}
-
 // GetAPIByUUID retrieves an API by its ID
 func (s *GatewayInternalAPIService) GetAPIByUUID(apiId, orgId string) (map[string]string, error) {
 	apiModel, err := s.apiRepo.GetAPIByUUID(apiId, orgId)
@@ -135,15 +116,8 @@ func (s *GatewayInternalAPIService) GetActiveDeploymentByGateway(apiID, orgID, g
 
 // GetActiveLLMProviderDeploymentByGateway retrieves the currently deployed LLM provider artifact for a specific gateway
 func (s *GatewayInternalAPIService) GetActiveLLMProviderDeploymentByGateway(providerID, orgID, gatewayID string) (map[string]string, error) {
-	provider, err := s.providerRepo.GetByID(providerID, orgID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get LLM provider: %w", err)
-	}
-	if provider == nil {
-		return nil, constants.ErrLLMProviderNotFound
-	}
 
-	deployment, err := s.deploymentRepo.GetCurrentByGateway(provider.UUID, gatewayID, orgID)
+	deployment, err := s.deploymentRepo.GetCurrentByGateway(providerID, gatewayID, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get deployment: %w", err)
 	}
@@ -160,15 +134,8 @@ func (s *GatewayInternalAPIService) GetActiveLLMProviderDeploymentByGateway(prov
 
 // GetActiveLLMProxyDeploymentByGateway retrieves the currently deployed LLM proxy artifact for a specific gateway
 func (s *GatewayInternalAPIService) GetActiveLLMProxyDeploymentByGateway(proxyID, orgID, gatewayID string) (map[string]string, error) {
-	proxy, err := s.proxyRepo.GetByID(proxyID, orgID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get LLM proxy: %w", err)
-	}
-	if proxy == nil {
-		return nil, constants.ErrLLMProxyNotFound
-	}
 
-	deployment, err := s.deploymentRepo.GetCurrentByGateway(proxy.UUID, gatewayID, orgID)
+	deployment, err := s.deploymentRepo.GetCurrentByGateway(proxyID, gatewayID, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get deployment: %w", err)
 	}
@@ -472,4 +439,41 @@ func (s *GatewayInternalAPIService) CreateGatewayDeployment(apiHandle, orgID, ga
 		Message:      "API deployment registered successfully",
 		Created:      apiCreated,
 	}, nil
+}
+
+// GetDeploymentsByGateway retrieves all deployments for a specific gateway
+// Used to compare local gateway state with platform-api state
+// If since is provided, only returns deployments updated after that timestamp
+func (s *GatewayInternalAPIService) GetDeploymentsByGateway(orgID, gatewayID string, since *time.Time) (*dto.GatewayDeploymentsResponse, error) {
+	// Get all deployments for this gateway (optionally filtered by timestamp)
+	deployments, err := s.deploymentRepo.GetAllDeploymentsByGateway(gatewayID, orgID, since)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get deployments: %w", err)
+	}
+
+	// Convert to response DTO
+	items := make([]dto.GatewayDeploymentInfo, len(deployments))
+	for i, dep := range deployments {
+		items[i] = dto.GatewayDeploymentInfo{
+			ArtifactID:   dep.Handle,
+			DeploymentID: dep.DeploymentID,
+			Kind:         dep.Kind,
+			State:        string(dep.Status),
+			DeployedAt:   dep.UpdatedAt,
+		}
+	}
+
+	return &dto.GatewayDeploymentsResponse{
+		Deployments: items,
+	}, nil
+}
+
+// GetDeploymentContentBatch retrieves deployment content for multiple deployment IDs
+// Returns a map of deploymentID -> DeploymentContent (artifact ID + YAML bytes)
+func (s *GatewayInternalAPIService) GetDeploymentContentBatch(orgID, gatewayID string, deploymentIDs []string) (map[string]*model.DeploymentContent, error) {
+	contentMap, err := s.deploymentRepo.GetDeploymentContentByIDs(deploymentIDs, orgID, gatewayID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get deployment content: %w", err)
+	}
+	return contentMap, nil
 }

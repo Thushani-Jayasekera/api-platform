@@ -75,6 +75,7 @@ issuer = ""
 [api_key]
 api_keys_per_user_per_api = 10
 algorithm = "sha256"
+issuer = "api-platform-devportal"
 
 [controller.logging]
 level = "info"
@@ -234,6 +235,13 @@ private_key_path = ""
 als_plain_text = true
 max_message_size = 1000000000
 max_header_limit = 8192
+
+# =============================================================================
+# POLICY CONFIGURATIONS
+# =============================================================================
+
+[policy_configurations.llm_cost_v0]
+pricing_file = "/home/wso2/conf/llm-pricing/model_prices.json"
 
 # =============================================================================
 # TRACING CONFIGURATION

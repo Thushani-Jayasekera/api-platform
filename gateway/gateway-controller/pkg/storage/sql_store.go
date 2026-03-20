@@ -29,7 +29,7 @@ import (
 	"strings"
 	"time"
 
-	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/generated"
+	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/management"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/metrics"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
 )
@@ -50,33 +50,20 @@ type sqlStore struct {
 
 	rebindQuery func(string) string
 
-	isConfigUniqueViolation          func(error) bool
-	isCertificateUniqueViolation    func(error) bool
-	isTemplateUniqueViolation       func(error) bool
-	isAPIKeyUniqueViolation         func(error) bool
-	isSubscriptionUniqueViolation   func(error) bool
-	isSubscriptionPlanUniqueViolation func(error) bool
+	isUniqueViolation func(error) bool
 
 	backendName string
-
-	subscriptionTokenEncryptionKey string
 }
 
-func newSQLStore(db *sql.DB, logger *slog.Logger, backendName string, gatewayId string, subscriptionTokenEncryptionKey string) *sqlStore {
+func newSQLStore(db *sql.DB, logger *slog.Logger, backendName string, gatewayId string) *sqlStore {
 	return &sqlStore{
 		db:          db,
 		logger:      logger,
 		gatewayId:   gatewayId,
 		backendName: backendName,
-		subscriptionTokenEncryptionKey: subscriptionTokenEncryptionKey,
 		// Defaults are identity/false; backends can override.
-		rebindQuery:                     func(query string) string { return query },
-		isConfigUniqueViolation:         func(error) bool { return false },
-		isCertificateUniqueViolation:    func(error) bool { return false },
-		isTemplateUniqueViolation:       func(error) bool { return false },
-		isAPIKeyUniqueViolation:         func(error) bool { return false },
-		isSubscriptionUniqueViolation:   func(error) bool { return false },
-		isSubscriptionPlanUniqueViolation: func(error) bool { return false },
+		rebindQuery:                       func(query string) string { return query },
+		isUniqueViolation: func(error) bool { return false },
 	}
 }
 
@@ -240,7 +227,7 @@ func (s *sqlStore) SaveConfig(cfg *models.StoredConfig) error {
 
 	if err != nil {
 		// Check for unique constraint violation
-		if s.isConfigUniqueViolation(err) {
+		if s.isUniqueViolation(err) {
 			return fmt.Errorf("%w: configuration with displayName '%s' and version '%s' already exists", ErrConflict, cfg.DisplayName, cfg.Version)
 		}
 		return fmt.Errorf("failed to insert configuration: %w", err)
@@ -790,7 +777,7 @@ func (s *sqlStore) SaveLLMProviderTemplate(template *models.StoredLLMProviderTem
 
 	if err != nil {
 		// Check for unique constraint violation
-		if s.isTemplateUniqueViolation(err) {
+		if s.isUniqueViolation(err) {
 			return fmt.Errorf("%w: template with handle '%s' already exists", ErrConflict, handle)
 		}
 		return fmt.Errorf("failed to insert template: %w", err)
@@ -837,7 +824,7 @@ func (s *sqlStore) UpdateLLMProviderTemplate(template *models.StoredLLMProviderT
 	)
 
 	if err != nil {
-		if s.isTemplateUniqueViolation(err) {
+		if s.isUniqueViolation(err) {
 			return fmt.Errorf("%w: template with handle '%s' already exists", ErrConflict, handle)
 		}
 		return fmt.Errorf("failed to update template: %w", err)
@@ -987,7 +974,7 @@ func (s *sqlStore) SaveCertificate(cert *models.StoredCertificate) error {
 
 	if err != nil {
 		// Check for unique constraint violation
-		if s.isCertificateUniqueViolation(err) {
+		if s.isUniqueViolation(err) {
 			return fmt.Errorf("%w: certificate with name '%s' already exists", ErrConflict, cert.Name)
 		}
 		return fmt.Errorf("failed to save certificate: %w", err)
@@ -1163,36 +1150,33 @@ func (s *sqlStore) SaveAPIKey(apiKey *models.APIKey) error {
 		// No existing record, insert new API key
 		insertQuery := `
 			INSERT INTO api_keys (
-				uuid, gateway_id, name, display_name, api_key, masked_api_key, artifact_uuid, operations, status,
-				created_at, created_by, updated_at, expires_at, expires_in_unit, expires_in_duration,
-				source, external_ref_id
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				uuid, gateway_id, name, api_key, masked_api_key, artifact_uuid, status,
+				created_at, created_by, updated_at, expires_at,
+				source, external_ref_id, issuer
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`
 
 		_, err := tx.ExecQ(insertQuery,
 			apiKey.UUID,
 			s.gatewayId,
 			apiKey.Name,
-			apiKey.DisplayName,
 			apiKey.APIKey,
 			apiKey.MaskedAPIKey,
 			apiKey.ArtifactUUID,
-			apiKey.Operations,
 			apiKey.Status,
 			apiKey.CreatedAt,
 			apiKey.CreatedBy,
 			apiKey.UpdatedAt,
 			apiKey.ExpiresAt,
-			apiKey.Unit,
-			apiKey.Duration,
 			apiKey.Source,
 			apiKey.ExternalRefId,
+			apiKey.Issuer,
 		)
 
 		if err != nil {
 			tx.Rollback()
 			// Check for unique constraint violation on api_key field
-			if s.isAPIKeyUniqueViolation(err) {
+			if s.isUniqueViolation(err) {
 				return fmt.Errorf("%w: API key value already exists", ErrConflict)
 			}
 			return fmt.Errorf("failed to insert API key: %w", err)
@@ -1225,8 +1209,9 @@ func (s *sqlStore) SaveAPIKey(apiKey *models.APIKey) error {
 // GetAPIKeyByID retrieves an API key by its UUID
 func (s *sqlStore) GetAPIKeyByID(id string) (*models.APIKey, error) {
 	query := `
-		SELECT uuid, name, display_name, api_key, masked_api_key, artifact_uuid, operations, status,
-		       created_at, created_by, updated_at, expires_at, source, external_ref_id
+		SELECT uuid, name, api_key, masked_api_key, artifact_uuid, status,
+		       created_at, created_by, updated_at, expires_at, source, external_ref_id,
+		       issuer
 		FROM api_keys
 		WHERE uuid = ? AND gateway_id = ?
 	`
@@ -1234,15 +1219,14 @@ func (s *sqlStore) GetAPIKeyByID(id string) (*models.APIKey, error) {
 	var apiKey models.APIKey
 	var expiresAt sql.NullTime
 	var externalRefId sql.NullString
+	var issuer sql.NullString
 
 	err := s.queryRow(query, id, s.gatewayId).Scan(
 		&apiKey.UUID,
 		&apiKey.Name,
-		&apiKey.DisplayName,
 		&apiKey.APIKey,
 		&apiKey.MaskedAPIKey,
 		&apiKey.ArtifactUUID,
-		&apiKey.Operations,
 		&apiKey.Status,
 		&apiKey.CreatedAt,
 		&apiKey.CreatedBy,
@@ -1250,6 +1234,7 @@ func (s *sqlStore) GetAPIKeyByID(id string) (*models.APIKey, error) {
 		&expiresAt,
 		&apiKey.Source,
 		&externalRefId,
+		&issuer,
 	)
 
 	if err != nil {
@@ -1265,6 +1250,61 @@ func (s *sqlStore) GetAPIKeyByID(id string) (*models.APIKey, error) {
 	}
 	if externalRefId.Valid {
 		apiKey.ExternalRefId = &externalRefId.String
+	}
+	if issuer.Valid {
+		apiKey.Issuer = &issuer.String
+	}
+
+	return &apiKey, nil
+}
+
+// GetAPIKeyByUUID retrieves an API key by its platform UUID
+func (s *sqlStore) GetAPIKeyByUUID(uuid string) (*models.APIKey, error) {
+	query := `
+		SELECT uuid, name, api_key, masked_api_key, artifact_uuid, status,
+		       created_at, created_by, updated_at, expires_at, source, external_ref_id,
+		       issuer
+		FROM api_keys
+		WHERE uuid = ? AND gateway_id = ?
+		LIMIT 1
+	`
+
+	var apiKey models.APIKey
+	var expiresAt sql.NullTime
+	var externalRefId sql.NullString
+	var issuer sql.NullString
+
+	err := s.queryRow(query, uuid, s.gatewayId).Scan(
+		&apiKey.UUID,
+		&apiKey.Name,
+		&apiKey.APIKey,
+		&apiKey.MaskedAPIKey,
+		&apiKey.ArtifactUUID,
+		&apiKey.Status,
+		&apiKey.CreatedAt,
+		&apiKey.CreatedBy,
+		&apiKey.UpdatedAt,
+		&expiresAt,
+		&apiKey.Source,
+		&externalRefId,
+		&issuer,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: key not found", ErrNotFound)
+		}
+		return nil, fmt.Errorf("failed to query API key by UUID: %w", err)
+	}
+
+	if expiresAt.Valid {
+		apiKey.ExpiresAt = &expiresAt.Time
+	}
+	if externalRefId.Valid {
+		apiKey.ExternalRefId = &externalRefId.String
+	}
+	if issuer.Valid {
+		apiKey.Issuer = &issuer.String
 	}
 
 	return &apiKey, nil
@@ -1273,8 +1313,9 @@ func (s *sqlStore) GetAPIKeyByID(id string) (*models.APIKey, error) {
 // GetAPIKeyByKey retrieves an API key by its key value
 func (s *sqlStore) GetAPIKeyByKey(key string) (*models.APIKey, error) {
 	query := `
-		SELECT uuid, name, display_name, api_key, masked_api_key, artifact_uuid, operations, status,
-		       created_at, created_by, updated_at, expires_at, source, external_ref_id
+		SELECT uuid, name, api_key, masked_api_key, artifact_uuid, status,
+		       created_at, created_by, updated_at, expires_at, source, external_ref_id,
+		       issuer
 		FROM api_keys
 		WHERE api_key = ? AND gateway_id = ?
 	`
@@ -1282,15 +1323,14 @@ func (s *sqlStore) GetAPIKeyByKey(key string) (*models.APIKey, error) {
 	var apiKey models.APIKey
 	var expiresAt sql.NullTime
 	var externalRefId sql.NullString
+	var issuer sql.NullString
 
 	err := s.queryRow(query, key, s.gatewayId).Scan(
 		&apiKey.UUID,
 		&apiKey.Name,
-		&apiKey.DisplayName,
 		&apiKey.APIKey,
 		&apiKey.MaskedAPIKey,
 		&apiKey.ArtifactUUID,
-		&apiKey.Operations,
 		&apiKey.Status,
 		&apiKey.CreatedAt,
 		&apiKey.CreatedBy,
@@ -1298,6 +1338,7 @@ func (s *sqlStore) GetAPIKeyByKey(key string) (*models.APIKey, error) {
 		&expiresAt,
 		&apiKey.Source,
 		&externalRefId,
+		&issuer,
 	)
 
 	if err != nil {
@@ -1314,6 +1355,9 @@ func (s *sqlStore) GetAPIKeyByKey(key string) (*models.APIKey, error) {
 	if externalRefId.Valid {
 		apiKey.ExternalRefId = &externalRefId.String
 	}
+	if issuer.Valid {
+		apiKey.Issuer = &issuer.String
+	}
 
 	return &apiKey, nil
 }
@@ -1321,8 +1365,9 @@ func (s *sqlStore) GetAPIKeyByKey(key string) (*models.APIKey, error) {
 // GetAPIKeysByAPI retrieves all API keys for a specific API
 func (s *sqlStore) GetAPIKeysByAPI(apiId string) ([]*models.APIKey, error) {
 	query := `
-		SELECT uuid, name, display_name, api_key, masked_api_key, artifact_uuid, operations, status,
-		       created_at, created_by, updated_at, expires_at, source, external_ref_id
+		SELECT uuid, name, api_key, masked_api_key, artifact_uuid, status,
+		       created_at, created_by, updated_at, expires_at, source, external_ref_id,
+		       issuer
 		FROM api_keys
 		WHERE artifact_uuid = ? AND gateway_id = ?
 		ORDER BY created_at DESC
@@ -1340,8 +1385,9 @@ func (s *sqlStore) GetAPIKeysByAPI(apiId string) ([]*models.APIKey, error) {
 // GetAPIKeysByAPIAndName retrieves an API key by its artifact_uuid and name
 func (s *sqlStore) GetAPIKeysByAPIAndName(apiId, name string) (*models.APIKey, error) {
 	query := `
-		SELECT uuid, name, display_name, api_key, masked_api_key, artifact_uuid, operations, status,
-		       created_at, created_by, updated_at, expires_at, source, external_ref_id
+		SELECT uuid, name, api_key, masked_api_key, artifact_uuid, status,
+		       created_at, created_by, updated_at, expires_at, source, external_ref_id,
+		       issuer
 		FROM api_keys
 		WHERE artifact_uuid = ? AND name = ? AND gateway_id = ?
 		LIMIT 1
@@ -1350,15 +1396,14 @@ func (s *sqlStore) GetAPIKeysByAPIAndName(apiId, name string) (*models.APIKey, e
 	var apiKey models.APIKey
 	var expiresAt sql.NullTime
 	var externalRefId sql.NullString
+	var issuer sql.NullString
 
 	err := s.queryRow(query, apiId, name, s.gatewayId).Scan(
 		&apiKey.UUID,
 		&apiKey.Name,
-		&apiKey.DisplayName,
 		&apiKey.APIKey,
 		&apiKey.MaskedAPIKey,
 		&apiKey.ArtifactUUID,
-		&apiKey.Operations,
 		&apiKey.Status,
 		&apiKey.CreatedAt,
 		&apiKey.CreatedBy,
@@ -1366,6 +1411,7 @@ func (s *sqlStore) GetAPIKeysByAPIAndName(apiId, name string) (*models.APIKey, e
 		&expiresAt,
 		&apiKey.Source,
 		&externalRefId,
+		&issuer,
 	)
 
 	if err != nil {
@@ -1381,6 +1427,9 @@ func (s *sqlStore) GetAPIKeysByAPIAndName(apiId, name string) (*models.APIKey, e
 	}
 	if externalRefId.Valid {
 		apiKey.ExternalRefId = &externalRefId.String
+	}
+	if issuer.Valid {
+		apiKey.Issuer = &issuer.String
 	}
 
 	return &apiKey, nil
@@ -1405,7 +1454,7 @@ func (s *sqlStore) UpdateAPIKey(apiKey *models.APIKey) error {
 
 	updateQuery := `
 			UPDATE api_keys
-			SET api_key = ?, masked_api_key = ?, display_name = ?, operations = ?, status = ?, created_by = ?, updated_at = ?, expires_at = ?, expires_in_unit = ?, expires_in_duration = ?,
+			SET api_key = ?, masked_api_key = ?, status = ?, created_by = ?, updated_at = ?, expires_at = ?,
 			    source = ?, external_ref_id = ?
 			WHERE artifact_uuid = ? AND name = ? AND gateway_id = ?
 		`
@@ -1413,14 +1462,10 @@ func (s *sqlStore) UpdateAPIKey(apiKey *models.APIKey) error {
 	_, err = tx.ExecQ(updateQuery,
 		apiKey.APIKey,
 		apiKey.MaskedAPIKey,
-		apiKey.DisplayName,
-		apiKey.Operations,
 		apiKey.Status,
 		apiKey.CreatedBy,
 		apiKey.UpdatedAt,
 		apiKey.ExpiresAt,
-		apiKey.Unit,
-		apiKey.Duration,
 		apiKey.Source,
 		apiKey.ExternalRefId,
 		apiKey.ArtifactUUID,
@@ -1431,7 +1476,7 @@ func (s *sqlStore) UpdateAPIKey(apiKey *models.APIKey) error {
 	if err != nil {
 		tx.Rollback()
 		// Check for unique constraint violation on api_key field
-		if s.isAPIKeyUniqueViolation(err) {
+		if s.isUniqueViolation(err) {
 			return fmt.Errorf("%w: API key value already exists", ErrConflict)
 		}
 		return fmt.Errorf("failed to update API key: %w", err)
@@ -1513,7 +1558,92 @@ func (s *sqlStore) RemoveAPIKeyAPIAndName(apiId, name string) error {
 	return nil
 }
 
+// ReplaceApplicationAPIKeyMappings atomically replaces all API key mappings for an application.
+func (s *sqlStore) ReplaceApplicationAPIKeyMappings(application *models.StoredApplication, mappings []*models.ApplicationAPIKeyMapping) error {
+	if application == nil || application.ApplicationUUID == "" || application.ApplicationID == "" || application.ApplicationName == "" || application.ApplicationType == "" {
+		return fmt.Errorf("invalid application payload")
+	}
+
+	tx, err := s.begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		}
+	}()
+
+	seen := make(map[string]struct{})
+	now := time.Now()
+
+	if _, err = tx.ExecQ(`
+		INSERT INTO applications (
+			application_uuid, application_id, application_name, application_type, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(application_uuid) DO UPDATE SET
+			application_id = excluded.application_id,
+			application_name = excluded.application_name,
+			application_type = excluded.application_type,
+			updated_at = excluded.updated_at
+	`, application.ApplicationUUID, application.ApplicationID, application.ApplicationName, application.ApplicationType, now, now); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("failed to upsert application metadata: %w", err)
+	}
+
+	if _, err = tx.ExecQ(`
+		DELETE FROM application_api_keys
+		WHERE application_uuid = ? AND gateway_id = ?
+	`, application.ApplicationUUID, s.gatewayId); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("failed to clear application mappings: %w", err)
+	}
+
+	for _, mapping := range mappings {
+		if mapping == nil {
+			continue
+		}
+		if mapping.ApplicationUUID == "" || mapping.APIKeyID == "" {
+			_ = tx.Rollback()
+			return fmt.Errorf("invalid application mapping payload")
+		}
+		if mapping.ApplicationUUID != application.ApplicationUUID {
+			_ = tx.Rollback()
+			return fmt.Errorf("application mapping UUID mismatch")
+		}
+
+		composite := mapping.ApplicationUUID + ":" + mapping.APIKeyID
+		if _, exists := seen[composite]; exists {
+			continue
+		}
+		seen[composite] = struct{}{}
+
+		if _, err = tx.ExecQ(`
+			INSERT INTO application_api_keys (
+				application_uuid, api_key_id, gateway_id, created_at, updated_at
+			)
+			VALUES (?, ?, ?, ?, ?)
+		`, mapping.ApplicationUUID, mapping.APIKeyID, s.gatewayId, now, now); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("failed to insert application mapping: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit application mapping transaction: %w", err)
+	}
+
+	return nil
+}
+
 // Close closes the database connection
+func (s *sqlStore) GetDB() *sql.DB {
+	return s.db
+}
+
 func (s *sqlStore) Close() error {
 	backend := s.backendName
 	if backend == "" {
@@ -1529,8 +1659,9 @@ func (s *sqlStore) Close() error {
 // GetAllAPIKeys retrieves all active API keys from the database.
 func (s *sqlStore) GetAllAPIKeys() ([]*models.APIKey, error) {
 	query := `
-		SELECT uuid, name, display_name, api_key, masked_api_key, artifact_uuid, operations, status,
-		       created_at, created_by, updated_at, expires_at, source, external_ref_id
+		SELECT uuid, name, api_key, masked_api_key, artifact_uuid, status,
+		       created_at, created_by, updated_at, expires_at, source, external_ref_id,
+		       issuer
 		FROM api_keys
 		WHERE status = 'active' AND gateway_id = ?
 		ORDER BY created_at DESC
@@ -1553,15 +1684,14 @@ func (s *sqlStore) scanAPIKeyRows(rows *sql.Rows) ([]*models.APIKey, error) {
 		var apiKey models.APIKey
 		var expiresAt sql.NullTime
 		var externalRefId sql.NullString
+		var issuer sql.NullString
 
 		err := rows.Scan(
 			&apiKey.UUID,
 			&apiKey.Name,
-			&apiKey.DisplayName,
 			&apiKey.APIKey,
 			&apiKey.MaskedAPIKey,
 			&apiKey.ArtifactUUID,
-			&apiKey.Operations,
 			&apiKey.Status,
 			&apiKey.CreatedAt,
 			&apiKey.CreatedBy,
@@ -1569,6 +1699,7 @@ func (s *sqlStore) scanAPIKeyRows(rows *sql.Rows) ([]*models.APIKey, error) {
 			&expiresAt,
 			&apiKey.Source,
 			&externalRefId,
+			&issuer,
 		)
 
 		if err != nil {
@@ -1581,6 +1712,9 @@ func (s *sqlStore) scanAPIKeyRows(rows *sql.Rows) ([]*models.APIKey, error) {
 		}
 		if externalRefId.Valid {
 			apiKey.ExternalRefId = &externalRefId.String
+		}
+		if issuer.Valid {
+			apiKey.Issuer = &issuer.String
 		}
 
 		apiKeys = append(apiKeys, &apiKey)
@@ -1624,7 +1758,7 @@ func (s *sqlStore) SaveSubscriptionPlan(plan *models.SubscriptionPlan) error {
 	plan.CreatedAt = now
 	plan.UpdatedAt = now
 	query := `
-		INSERT INTO subscription_plans (id, gateway_id, plan_name, billing_plan, stop_on_quota_reach,
+		INSERT INTO subscription_plans (uuid, gateway_id, plan_name, billing_plan, stop_on_quota_reach,
 			throttle_limit_count, throttle_limit_unit, expiry_time, status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
@@ -1632,7 +1766,7 @@ func (s *sqlStore) SaveSubscriptionPlan(plan *models.SubscriptionPlan) error {
 		plan.StopOnQuotaReach, plan.ThrottleLimitCount, plan.ThrottleLimitUnit,
 		plan.ExpiryTime, string(plan.Status), plan.CreatedAt, plan.UpdatedAt)
 	if err != nil {
-		if s.isSubscriptionPlanUniqueViolation(err) {
+		if s.isUniqueViolation(err) {
 			return fmt.Errorf("%w: subscription plan already exists", ErrConflict)
 		}
 		return fmt.Errorf("failed to insert subscription plan: %w", err)
@@ -1643,10 +1777,10 @@ func (s *sqlStore) SaveSubscriptionPlan(plan *models.SubscriptionPlan) error {
 // GetSubscriptionPlanByID retrieves a subscription plan by ID and gateway.
 func (s *sqlStore) GetSubscriptionPlanByID(id, gatewayID string) (*models.SubscriptionPlan, error) {
 	query := `
-		SELECT id, gateway_id, plan_name, billing_plan, stop_on_quota_reach,
+		SELECT uuid, gateway_id, plan_name, billing_plan, stop_on_quota_reach,
 			throttle_limit_count, throttle_limit_unit, expiry_time, status, created_at, updated_at
 		FROM subscription_plans
-		WHERE id = ? AND gateway_id = ?
+		WHERE uuid = ? AND gateway_id = ?
 	`
 	plan := &models.SubscriptionPlan{}
 	err := s.queryRow(query, id, s.gatewayId).Scan(
@@ -1666,7 +1800,7 @@ func (s *sqlStore) GetSubscriptionPlanByID(id, gatewayID string) (*models.Subscr
 // ListSubscriptionPlans returns all subscription plans for a gateway.
 func (s *sqlStore) ListSubscriptionPlans(gatewayID string) ([]*models.SubscriptionPlan, error) {
 	query := `
-		SELECT id, gateway_id, plan_name, billing_plan, stop_on_quota_reach,
+		SELECT uuid, gateway_id, plan_name, billing_plan, stop_on_quota_reach,
 			throttle_limit_count, throttle_limit_unit, expiry_time, status, created_at, updated_at
 		FROM subscription_plans
 		WHERE gateway_id = ?
@@ -1703,7 +1837,7 @@ func (s *sqlStore) UpdateSubscriptionPlan(plan *models.SubscriptionPlan) error {
 		UPDATE subscription_plans
 		SET plan_name = ?, billing_plan = ?, stop_on_quota_reach = ?, throttle_limit_count = ?,
 			throttle_limit_unit = ?, expiry_time = ?, status = ?, updated_at = ?
-		WHERE id = ? AND gateway_id = ?
+		WHERE uuid = ? AND gateway_id = ?
 	`
 	result, err := s.exec(query,
 		plan.PlanName, plan.BillingPlan, plan.StopOnQuotaReach,
@@ -1726,7 +1860,7 @@ func (s *sqlStore) UpdateSubscriptionPlan(plan *models.SubscriptionPlan) error {
 
 // DeleteSubscriptionPlan removes a subscription plan by ID and gateway.
 func (s *sqlStore) DeleteSubscriptionPlan(id, gatewayID string) error {
-	query := `DELETE FROM subscription_plans WHERE id = ? AND gateway_id = ?`
+	query := `DELETE FROM subscription_plans WHERE uuid = ? AND gateway_id = ?`
 	result, err := s.exec(query, id, s.gatewayId)
 	if err != nil {
 		return fmt.Errorf("failed to delete subscription plan: %w", err)
@@ -1760,7 +1894,7 @@ func (s *sqlStore) DeleteSubscriptionPlansNotIn(ids []string) error {
 		placeholders[i] = "?"
 		args = append(args, ids[i])
 	}
-	query := fmt.Sprintf(`DELETE FROM subscription_plans WHERE gateway_id = ? AND id NOT IN (%s)`,
+	query := fmt.Sprintf(`DELETE FROM subscription_plans WHERE gateway_id = ? AND uuid NOT IN (%s)`,
 		strings.Join(placeholders, ","))
 	_, err := s.exec(query, args...)
 	if err != nil {
@@ -1777,32 +1911,24 @@ func (s *sqlStore) SaveSubscription(sub *models.Subscription) error {
 	}
 	sub.GatewayID = s.gatewayId
 	plainToken := sub.SubscriptionToken
+	if plainToken == "" {
+		return fmt.Errorf("subscription token cannot be empty")
+	}
 	tokenHash := hashSubscriptionToken(plainToken)
-
-	if s.subscriptionTokenEncryptionKey == "" {
-		return fmt.Errorf("subscription token encryption key required; configure subscriptions.subscription_token_encryption_key to store subscriptions")
-	}
-	key, err := DeriveEncryptionKey(s.subscriptionTokenEncryptionKey)
-	if err != nil {
-		return fmt.Errorf("subscription token encryption key: %w", err)
-	}
-	encryptedToken, err := EncryptSubscriptionToken(key, plainToken)
-	if err != nil {
-		return fmt.Errorf("failed to encrypt subscription token: %w", err)
-	}
+	sub.SubscriptionTokenHash = tokenHash
 
 	now := time.Now()
 	sub.CreatedAt = now
 	sub.UpdatedAt = now
 	query := `
-		INSERT INTO subscriptions (id, gateway_id, api_id, application_id, subscription_token, subscription_token_hash,
+		INSERT INTO subscriptions (uuid, gateway_id, api_id, application_id, subscription_token_hash,
 			subscription_plan_id, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	_, err = s.exec(query, sub.ID, s.gatewayId, sub.APIID, sub.ApplicationID,
-		encryptedToken, tokenHash, sub.SubscriptionPlanID, string(sub.Status), sub.CreatedAt, sub.UpdatedAt)
+	_, err := s.exec(query, sub.ID, s.gatewayId, sub.APIID, sub.ApplicationID,
+		tokenHash, sub.SubscriptionPlanID, string(sub.Status), sub.CreatedAt, sub.UpdatedAt)
 	if err != nil {
-		if s.isSubscriptionUniqueViolation(err) {
+		if s.isUniqueViolation(err) {
 			return fmt.Errorf("%w: subscription token already exists for this API", ErrConflict)
 		}
 		return fmt.Errorf("failed to insert subscription: %w", err)
@@ -1811,18 +1937,17 @@ func (s *sqlStore) SaveSubscription(sub *models.Subscription) error {
 }
 
 // GetSubscriptionByID retrieves a subscription by ID and gateway.
-// Decrypts subscription_token for API response.
+// SubscriptionToken is not stored; use Platform-API to retrieve the original token.
 func (s *sqlStore) GetSubscriptionByID(id, gatewayID string) (*models.Subscription, error) {
 	query := `
-		SELECT id, api_id, application_id, subscription_token, subscription_token_hash, subscription_plan_id,
+		SELECT uuid, api_id, application_id, subscription_token_hash, subscription_plan_id,
 			gateway_id, status, created_at, updated_at
 		FROM subscriptions
-		WHERE id = ? AND gateway_id = ?
+		WHERE uuid = ? AND gateway_id = ?
 	`
 	sub := &models.Subscription{}
-	var storedToken string
 	err := s.queryRow(query, id, s.gatewayId).Scan(
-		&sub.ID, &sub.APIID, &sub.ApplicationID, &storedToken, &sub.SubscriptionTokenHash,
+		&sub.ID, &sub.APIID, &sub.ApplicationID, &sub.SubscriptionTokenHash,
 		&sub.SubscriptionPlanID, &sub.GatewayID, &sub.Status,
 		&sub.CreatedAt, &sub.UpdatedAt,
 	)
@@ -1832,36 +1957,13 @@ func (s *sqlStore) GetSubscriptionByID(id, gatewayID string) (*models.Subscripti
 		}
 		return nil, err
 	}
-	plainToken, err := s.decryptSubscriptionToken(storedToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt subscription token: %w", err)
-	}
-	sub.SubscriptionToken = plainToken
 	return sub, nil
-}
-
-func (s *sqlStore) decryptSubscriptionToken(stored string) (string, error) {
-	if stored == "" {
-		return "", nil
-	}
-	if s.subscriptionTokenEncryptionKey == "" {
-		return stored, nil // stored without encryption, return as-is
-	}
-	key, err := DeriveEncryptionKey(s.subscriptionTokenEncryptionKey)
-	if err != nil {
-		return "", fmt.Errorf("key derivation: %w", err)
-	}
-	plain, err := DecryptSubscriptionToken(key, stored)
-	if err != nil {
-		return "", fmt.Errorf("decryption: %w", err)
-	}
-	return plain, nil
 }
 
 // ListSubscriptionsByAPI returns subscriptions for an API with optional filters.
 func (s *sqlStore) ListSubscriptionsByAPI(apiID, gatewayID string, applicationID *string, status *string) ([]*models.Subscription, error) {
 	query := `
-		SELECT id, api_id, application_id, subscription_token, subscription_token_hash, subscription_plan_id,
+		SELECT uuid, api_id, application_id, subscription_token_hash, subscription_plan_id,
 			gateway_id, status, created_at, updated_at
 		FROM subscriptions
 		WHERE gateway_id = ?
@@ -1888,16 +1990,10 @@ func (s *sqlStore) ListSubscriptionsByAPI(apiID, gatewayID string, applicationID
 	var list []*models.Subscription
 	for rows.Next() {
 		sub := &models.Subscription{}
-		var storedToken string
-		if err := rows.Scan(&sub.ID, &sub.APIID, &sub.ApplicationID, &storedToken, &sub.SubscriptionTokenHash,
+		if err := rows.Scan(&sub.ID, &sub.APIID, &sub.ApplicationID, &sub.SubscriptionTokenHash,
 			&sub.SubscriptionPlanID, &sub.GatewayID, &sub.Status, &sub.CreatedAt, &sub.UpdatedAt); err != nil {
 			return nil, err
 		}
-		plainToken, err := s.decryptSubscriptionToken(storedToken)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decrypt subscription token for %s: %w", sub.ID, err)
-		}
-		sub.SubscriptionToken = plainToken
 		list = append(list, sub)
 	}
 	return list, rows.Err()
@@ -1906,7 +2002,7 @@ func (s *sqlStore) ListSubscriptionsByAPI(apiID, gatewayID string, applicationID
 // ListActiveSubscriptions returns all ACTIVE subscriptions for this gateway in one query.
 func (s *sqlStore) ListActiveSubscriptions() ([]*models.Subscription, error) {
 	query := `
-		SELECT id, api_id, application_id, subscription_token, subscription_token_hash, subscription_plan_id,
+		SELECT uuid, api_id, application_id, subscription_token_hash, subscription_plan_id,
 			gateway_id, status, created_at, updated_at
 		FROM subscriptions
 		WHERE gateway_id = ? AND status = ?
@@ -1920,24 +2016,18 @@ func (s *sqlStore) ListActiveSubscriptions() ([]*models.Subscription, error) {
 	var list []*models.Subscription
 	for rows.Next() {
 		sub := &models.Subscription{}
-		var storedToken string
-		if err := rows.Scan(&sub.ID, &sub.APIID, &sub.ApplicationID, &storedToken, &sub.SubscriptionTokenHash,
+		if err := rows.Scan(&sub.ID, &sub.APIID, &sub.ApplicationID, &sub.SubscriptionTokenHash,
 			&sub.SubscriptionPlanID, &sub.GatewayID, &sub.Status, &sub.CreatedAt, &sub.UpdatedAt); err != nil {
 			return nil, err
 		}
-		plainToken, err := s.decryptSubscriptionToken(storedToken)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decrypt subscription token for %s: %w", sub.ID, err)
-		}
-		sub.SubscriptionToken = plainToken
 		list = append(list, sub)
 	}
 	return list, rows.Err()
 }
 
 // UpdateSubscription updates an existing subscription.
-// Persists all mutable fields: application_id, subscription_token, subscription_plan_id, status.
-// Receives plain token; encrypts and hashes before storage (same as SaveSubscription).
+// Persists all mutable fields: application_id, subscription_token_hash, subscription_plan_id, status.
+// If plainToken is set, hashes it; otherwise reuses existing SubscriptionTokenHash (for status-only updates from DB-loaded subs).
 func (s *sqlStore) UpdateSubscription(sub *models.Subscription) error {
 	if sub == nil {
 		return fmt.Errorf("failed to update subscription: nil subscription")
@@ -1945,27 +2035,22 @@ func (s *sqlStore) UpdateSubscription(sub *models.Subscription) error {
 	sub.GatewayID = s.gatewayId
 	sub.UpdatedAt = time.Now()
 	plainToken := sub.SubscriptionToken
-	tokenHash := hashSubscriptionToken(plainToken)
-
-	if s.subscriptionTokenEncryptionKey == "" {
-		return fmt.Errorf("subscription token encryption key required; configure subscriptions.subscription_token_encryption_key to store subscriptions")
+	tokenHash := sub.SubscriptionTokenHash
+	if plainToken != "" {
+		tokenHash = hashSubscriptionToken(plainToken)
 	}
-	key, err := DeriveEncryptionKey(s.subscriptionTokenEncryptionKey)
-	if err != nil {
-		return fmt.Errorf("subscription token encryption key: %w", err)
+	if tokenHash == "" {
+		return fmt.Errorf("subscription token hash cannot be empty")
 	}
-	encryptedToken, err := EncryptSubscriptionToken(key, plainToken)
-	if err != nil {
-		return fmt.Errorf("failed to encrypt subscription token: %w", err)
-	}
+	sub.SubscriptionTokenHash = tokenHash
 
 	query := `
 		UPDATE subscriptions
-		SET api_id = ?, application_id = ?, subscription_token = ?, subscription_token_hash = ?,
+		SET api_id = ?, application_id = ?, subscription_token_hash = ?,
 			subscription_plan_id = ?, status = ?, updated_at = ?
-		WHERE id = ? AND gateway_id = ?
+		WHERE uuid = ? AND gateway_id = ?
 	`
-	result, err := s.exec(query, sub.APIID, sub.ApplicationID, encryptedToken, tokenHash,
+	result, err := s.exec(query, sub.APIID, sub.ApplicationID, sub.SubscriptionTokenHash,
 		sub.SubscriptionPlanID, string(sub.Status), sub.UpdatedAt, sub.ID, s.gatewayId)
 	if err != nil {
 		return fmt.Errorf("failed to update subscription: %w", err)
@@ -1982,7 +2067,7 @@ func (s *sqlStore) UpdateSubscription(sub *models.Subscription) error {
 
 // DeleteSubscription removes a subscription by ID and gateway.
 func (s *sqlStore) DeleteSubscription(id, gatewayID string) error {
-	query := `DELETE FROM subscriptions WHERE id = ? AND gateway_id = ?`
+	query := `DELETE FROM subscriptions WHERE uuid = ? AND gateway_id = ?`
 	result, err := s.exec(query, id, s.gatewayId)
 	if err != nil {
 		return fmt.Errorf("failed to delete subscription: %w", err)
@@ -2019,7 +2104,7 @@ func (s *sqlStore) DeleteSubscriptionsForAPINotIn(apiID string, ids []string) er
 		placeholders[i] = "?"
 		args = append(args, ids[i])
 	}
-	query := fmt.Sprintf(`DELETE FROM subscriptions WHERE gateway_id = ? AND api_id = ? AND id NOT IN (%s)`,
+	query := fmt.Sprintf(`DELETE FROM subscriptions WHERE gateway_id = ? AND api_id = ? AND uuid NOT IN (%s)`,
 		strings.Join(placeholders, ","))
 	_, err := s.exec(query, args...)
 	if err != nil {

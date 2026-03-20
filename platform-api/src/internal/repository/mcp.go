@@ -50,7 +50,7 @@ func (r *MCPProxyRepo) Create(p *model.MCPProxy) error {
 		return fmt.Errorf("failed to generate MCP proxy ID: %w", err)
 	}
 	p.UUID = uuidStr
-	now := time.Now()
+	now := time.Now().UTC()
 	p.CreatedAt = now
 	p.UpdatedAt = now
 
@@ -206,15 +206,7 @@ func (r *MCPProxyRepo) List(orgUUID string, limit, offset int) ([]*model.MCPProx
 
 // Count returns the total number of MCP proxies for an organization
 func (r *MCPProxyRepo) Count(orgUUID string) (int, error) {
-	var count int
-	query := `
-		SELECT COUNT(*) FROM artifacts a
-		JOIN mcp_proxies p ON a.uuid = p.uuid
-		WHERE a.organization_uuid = ? AND a.kind = ?`
-	if err := r.db.QueryRow(r.db.Rebind(query), orgUUID, constants.MCPProxy).Scan(&count); err != nil {
-		return 0, err
-	}
-	return count, nil
+	return r.artifactRepo.CountByKindAndOrg(constants.MCPProxy, orgUUID)
 }
 
 // ListByProject retrieves all MCP proxies for a specific project
@@ -272,7 +264,7 @@ func (r *MCPProxyRepo) CountByProject(orgUUID, projectUUID string) (int, error) 
 
 // Update updates an existing MCP proxy
 func (r *MCPProxyRepo) Update(p *model.MCPProxy) error {
-	now := time.Now()
+	now := time.Now().UTC()
 	p.UpdatedAt = now
 
 	configurationJSON, err := serializeMCPProxyConfiguration(p.Configuration)

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/generated"
+	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/management"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/config"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/storage"
@@ -46,17 +46,16 @@ spec:
 	}
 
 	cfg := &models.StoredConfig{
-		UUID:            "0000-test-config-1-0000-000000000000",
-		Kind:            string(api.WebSubApi),
-		Handle:          "testapi",
-		DisplayName:     "testapi",
-		Version:         "v1",
-		Configuration:   apiCfg,
-		Status:          models.StatusPending,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		DeployedAt:      nil,
-		DeployedVersion: 0,
+		UUID:          "0000-test-config-1-0000-000000000000",
+		Kind:          string(api.WebSubApi),
+		Handle:        "testapi",
+		DisplayName:   "testapi",
+		Version:       "v1",
+		Configuration: apiCfg,
+		Status:        models.StatusPending,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		DeployedAt:    nil,
 	}
 
 	err := service.store.Add(cfg)
@@ -99,17 +98,16 @@ spec:
 	}
 
 	cfg := &models.StoredConfig{
-		UUID:            "0000-test-config-1-0000-000000000000",
-		Kind:            string(api.WebSubApi),
-		Handle:          "testapi",
-		DisplayName:     "testapi",
-		Version:         "v1",
-		Configuration:   apiCfg,
-		Status:          models.StatusPending,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		DeployedAt:      nil,
-		DeployedVersion: 0,
+		UUID:          "0000-test-config-1-0000-000000000000",
+		Kind:          string(api.WebSubApi),
+		Handle:        "testapi",
+		DisplayName:   "testapi",
+		Version:       "v1",
+		Configuration: apiCfg,
+		Status:        models.StatusPending,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		DeployedAt:    nil,
 	}
 
 	err := service.store.Add(cfg)
@@ -139,15 +137,14 @@ spec:
 		t.Fatalf("failed to parse inline yaml: %v", err)
 	}
 
-	cfg, err = service.store.GetByNameVersion("testapi", "v1")
-	if err != nil {
+	cfg, err = service.store.GetByKindNameAndVersion(models.KindWebSubApi, "testapi", "v1")
+	if err != nil || cfg == nil {
 		t.Fatalf("failed to get config from store: %v", err)
 	}
 
 	cfg.Configuration = apiCfg
 	cfg.CreatedAt = time.Now()
 	cfg.UpdatedAt = time.Now()
-	cfg.DeployedVersion += 1
 	cfg.Status = models.StatusPending
 	cfg.DeployedAt = nil
 
@@ -207,31 +204,29 @@ spec:
 	}
 
 	cfgA := &models.StoredConfig{
-		UUID:            "0000-cfg-a-0000-000000000000",
-		Kind:            string(api.WebSubApi),
-		Handle:          "testapiA",
-		DisplayName:     "testapiA",
-		Version:         "v1",
-		Configuration:   apiCfgA,
-		Status:          models.StatusPending,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		DeployedAt:      nil,
-		DeployedVersion: 0,
+		UUID:          "0000-cfg-a-0000-000000000000",
+		Kind:          string(api.WebSubApi),
+		Handle:        "testapiA",
+		DisplayName:   "testapiA",
+		Version:       "v1",
+		Configuration: apiCfgA,
+		Status:        models.StatusPending,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		DeployedAt:    nil,
 	}
 
 	cfgB := &models.StoredConfig{
-		UUID:            "0000-cfg-b-0000-000000000000",
-		Kind:            string(api.WebSubApi),
-		Handle:          "testapiB",
-		DisplayName:     "testapiB",
-		Version:         "v1",
-		Configuration:   apiCfgB,
-		Status:          models.StatusPending,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		DeployedAt:      nil,
-		DeployedVersion: 0,
+		UUID:          "0000-cfg-b-0000-000000000000",
+		Kind:          string(api.WebSubApi),
+		Handle:        "testapiB",
+		DisplayName:   "testapiB",
+		Version:       "v1",
+		Configuration: apiCfgB,
+		Status:        models.StatusPending,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		DeployedAt:    nil,
 	}
 
 	var wg sync.WaitGroup
@@ -301,17 +296,16 @@ spec:
 	}
 
 	cfg := &models.StoredConfig{
-		UUID:            "0000-test-config-1-0000-000000000000",
-		Kind:            string(api.WebSubApi),
-		Handle:          "testapi",
-		DisplayName:     "testapi",
-		Version:         "v1",
-		Configuration:   apiCfg,
-		Status:          models.StatusPending,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		DeployedAt:      nil,
-		DeployedVersion: 0,
+		UUID:          "0000-test-config-1-0000-000000000000",
+		Kind:          string(api.WebSubApi),
+		Handle:        "testapi",
+		DisplayName:   "testapi",
+		Version:       "v1",
+		Configuration: apiCfg,
+		Status:        models.StatusPending,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		DeployedAt:    nil,
 	}
 
 	err := service.store.Add(cfg)

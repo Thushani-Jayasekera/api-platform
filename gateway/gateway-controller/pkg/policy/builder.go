@@ -19,11 +19,11 @@
 package policy
 
 import (
+	"log/slog"
 	"strings"
 	"time"
-	"log/slog"
 
-	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/generated"
+	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/management"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/config"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/utils"
@@ -40,7 +40,7 @@ import (
 //
 // Policy execution order: System Policies -> API Level Policies -> Operation Level Policies
 // Each level does not override the previous one; policies are executed in the given order.
-func DerivePolicyFromAPIConfig(cfg *models.StoredConfig, routerConfig *config.RouterConfig, systemConfig *config.Config, policyDefinitions map[string]api.PolicyDefinition) *models.StoredPolicyConfig {
+func DerivePolicyFromAPIConfig(cfg *models.StoredConfig, routerConfig *config.RouterConfig, systemConfig *config.Config, policyDefinitions map[string]models.PolicyDefinition) *models.StoredPolicyConfig {
 	// Collect API-level policies (validate policy version exists, pass major-only to engine)
 	apiPolicies := make(map[string]policyenginev1.PolicyInstance)
 	if cfg.GetPolicies() != nil {
@@ -68,9 +68,9 @@ func DerivePolicyFromAPIConfig(cfg *models.StoredConfig, routerConfig *config.Ro
 				finalPolicies = make([]policyenginev1.PolicyInstance, 0, len(*apiData.Policies))
 				for _, p := range *apiData.Policies {
 					// Only append if the policy was successfully resolved (exists in apiPolicies map)
-				if v, ok := apiPolicies[p.Name]; ok {
-					finalPolicies = append(finalPolicies, v)
-				}
+					if v, ok := apiPolicies[p.Name]; ok {
+						finalPolicies = append(finalPolicies, v)
+					}
 				}
 			}
 
@@ -138,8 +138,7 @@ func DerivePolicyFromAPIConfig(cfg *models.StoredConfig, routerConfig *config.Ro
 			}
 
 			vhosts := []string{effectiveMainVHost}
-			if apiData.Upstream.Sandbox != nil && apiData.Upstream.Sandbox.Url != nil &&
-				strings.TrimSpace(*apiData.Upstream.Sandbox.Url) != "" {
+			if apiData.Upstream.Sandbox != nil {
 				vhosts = append(vhosts, effectiveSandboxVHost)
 			}
 

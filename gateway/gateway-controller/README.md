@@ -538,7 +538,8 @@ gateway-controller/
 │   └── logger/
 │       └── logger.go         # Zap logger setup
 ├── api/
-│   └── openapi.yaml          # OpenAPI 3.0 specification
+│   ├── management-openapi.yaml  # OpenAPI 3.0 spec — management API (deploy/manage APIs)
+│   └── admin-openapi.yaml       # OpenAPI 3.0 spec — admin API (health/debug/xDS status)
 ├── config/
 │   ├── config.yaml           # Default configuration
 │   └── config-memory-only.yaml  # Memory-only example

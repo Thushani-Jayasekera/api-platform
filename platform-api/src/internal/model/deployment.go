@@ -37,13 +37,23 @@ type Deployment struct {
 
 	// Lifecycle state fields (from deployment_status table via JOIN)
 	// nil values indicate ARCHIVED state (no record in status table)
-	Status    *DeploymentStatus `json:"status,omitempty" db:"status"`
-	UpdatedAt *time.Time        `json:"updatedAt,omitempty" db:"status_updated_at"`
+	Status       *DeploymentStatus `json:"status,omitempty" db:"status"`
+	UpdatedAt    *time.Time        `json:"updatedAt,omitempty" db:"status_updated_at"`
+	StatusReason *string           `json:"statusReason,omitempty" db:"status_reason"`
 }
 
 // TableName returns the table name for the Deployment model
 func (Deployment) TableName() string {
 	return "deployments"
+}
+
+// DeploymentContent holds the artifact content for a single deployment,
+// used internally when constructing batch archive responses.
+type DeploymentContent struct {
+	DeploymentID string
+	ArtifactID   string
+	Kind         string
+	Content      []byte
 }
 
 // DeploymentStatus represents the status of a deployment
@@ -53,8 +63,22 @@ type DeploymentStatus string
 const (
 	DeploymentStatusDeployed   DeploymentStatus = "DEPLOYED"
 	DeploymentStatusUndeployed DeploymentStatus = "UNDEPLOYED"
+	DeploymentStatusDeploying   DeploymentStatus = "DEPLOYING"
+	DeploymentStatusUndeploying DeploymentStatus = "UNDEPLOYING"
+	DeploymentStatusFailed      DeploymentStatus = "FAILED"
 	DeploymentStatusArchived   DeploymentStatus = "ARCHIVED" // Derived state: exists in history but not in status table
 )
+
+// DeploymentInfo is a lightweight representation of a deployment
+// Contains only the essential fields needed for listing deployments
+type DeploymentInfo struct {
+	DeploymentID string           `json:"deploymentId" db:"deployment_id"`
+	ArtifactID   string           `json:"artifactId" db:"artifact_uuid"`
+	Handle       string           `json:"handle" db:"handle"` // Artifact handle (apiId)
+	Kind         string           `json:"kind" db:"kind"`     // Artifact kind: RestAPI, LLMProvider, LLMProxy, MCPProxy
+	Status       DeploymentStatus `json:"status" db:"status"`
+	UpdatedAt    time.Time        `json:"updatedAt" db:"updated_at"` // DeployedAt timestamp
+}
 
 // DeploymentMetadata represents the metadata section of the API deployment YAML
 type DeploymentMetadata struct {

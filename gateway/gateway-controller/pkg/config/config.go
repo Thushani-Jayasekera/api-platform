@@ -19,8 +19,6 @@
 package config
 
 import (
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"net/url"
 	"strings"
@@ -72,9 +70,6 @@ type SubscriptionsConfig struct {
 	// EnableValidation toggles automatic injection of the subscriptionValidation
 	// system policy into API policy chains.
 	EnableValidation bool `koanf:"enable_validation"`
-	// SubscriptionTokenEncryptionKey is the 32-byte key for AES-256-GCM encryption of subscription tokens in the gateway DB.
-	// Provide as 64 hex chars or 44 base64 chars. Env: APIP_GW_SUBSCRIPTIONS_SUBSCRIPTION_TOKEN_ENCRYPTION_KEY
-	SubscriptionTokenEncryptionKey string `koanf:"subscription_token_encryption_key"`
 }
 
 // AnalyticsPublishersConfig holds configuration for all analytics publishers
@@ -217,6 +212,7 @@ type PolicyServerTLS struct {
 // PoliciesConfig holds policy-related configuration
 type PoliciesConfig struct {
 	DefinitionsPath string `koanf:"definitions_path"` // Directory containing policy definitions
+	BuildLockPath   string `koanf:"build_lock_path"`  // Path to build-lock.yaml for custom policy detection
 }
 
 type LLMConfig struct {
@@ -383,13 +379,13 @@ type LoggingConfig struct {
 
 // ControlPlaneConfig holds control plane connection configuration
 type ControlPlaneConfig struct {
-	Host                 string        `koanf:"host"`                   // Control plane hostname
-	Token                string        `koanf:"token"`                  // Registration token (api-key)
-	ReconnectInitial     time.Duration `koanf:"reconnect_initial"`      // Initial retry delay
-	ReconnectMax         time.Duration `koanf:"reconnect_max"`          // Maximum retry delay
-	PollingInterval      time.Duration `koanf:"polling_interval"`       // Reconciliation polling interval
-	InsecureSkipVerify   bool          `koanf:"insecure_skip_verify"`   // Skip TLS certificate verification (default: true for dev)
-	DeploymentPushEnabled bool         `koanf:"deployment_push_enabled"` // Push API deployments to control plane (default: false)
+	Host                  string        `koanf:"host"`                    // Control plane hostname
+	Token                 string        `koanf:"token"`                   // Registration token (api-key)
+	ReconnectInitial      time.Duration `koanf:"reconnect_initial"`       // Initial retry delay
+	ReconnectMax          time.Duration `koanf:"reconnect_max"`           // Maximum retry delay
+	PollingInterval       time.Duration `koanf:"polling_interval"`        // Reconciliation polling interval
+	InsecureSkipVerify    bool          `koanf:"insecure_skip_verify"`    // Skip TLS certificate verification (default: true for dev)
+	DeploymentPushEnabled bool          `koanf:"deployment_push_enabled"` // Push API deployments to control plane (default: false)
 }
 
 // APIKeyConfig represents the configuration for API keys
@@ -398,6 +394,9 @@ type APIKeyConfig struct {
 	Algorithm            string `koanf:"algorithm"`                 // Hashing algorithm to use
 	MinKeyLength         int    `koanf:"min_key_length"`            // Minimum length for external API key values
 	MaxKeyLength         int    `koanf:"max_key_length"`            // Maximum length for external API key values
+	// Issuer identifies this gateway's portal; when non-empty, only API keys whose
+	// issuer field matches (or is null) will be accepted by the api-key-auth policy.
+	Issuer string `koanf:"issuer"`
 }
 
 // LoadConfig loads configuration from file, environment variables, and defaults
@@ -431,8 +430,6 @@ func LoadConfig(configPath string) (*Config, error) {
 			return "controller.controlplane.polling_interval"
 		case "insecure_skip_verify":
 			return "controller.controlplane.insecure_skip_verify"
-		case "subscriptions_subscription_token_encryption_key":
-			return "subscriptions.subscription_token_encryption_key"
 		default:
 			// For other env vars, use standard mapping (underscore to dot)
 			// Step 1: Convert double underscore "__" into a temporary placeholder
@@ -492,6 +489,7 @@ func defaultConfig() *Config {
 			},
 			Policies: PoliciesConfig{
 				DefinitionsPath: "./default-policies",
+				BuildLockPath:   "./build-lock.yaml",
 			},
 			LLM: LLMConfig{
 				TemplateDefinitionsPath: "./default-llm-provider-templates",
@@ -1404,31 +1402,9 @@ func (c *Config) validateAPIKeyConfig() error {
 	return nil
 }
 
-// validateSubscriptionsConfig validates subscription token encryption key when set.
-// Empty key is allowed (tokens stored unencrypted). Non-empty must decode to exactly 32 bytes.
+// validateSubscriptionsConfig validates subscriptions configuration.
 func (c *Config) validateSubscriptionsConfig() error {
-	if c.Subscriptions == nil {
-		return nil
-	}
-	keyStr := strings.TrimSpace(c.Subscriptions.SubscriptionTokenEncryptionKey)
-	if keyStr == "" {
-		return nil
-	}
-	// Must decode to exactly 32 bytes (AES-256 key)
-	if len(keyStr) == 64 {
-		key, err := hex.DecodeString(keyStr)
-		if err == nil && len(key) == 32 {
-			return nil
-		}
-	}
-	key, err := base64.StdEncoding.DecodeString(keyStr)
-	if err == nil && len(key) == 32 {
-		return nil
-	}
-	if len(keyStr) == 32 {
-		return nil
-	}
-	return fmt.Errorf("subscriptions.subscription_token_encryption_key must be 32 bytes when set (provide 64 hex chars, base64 that decodes to 32 bytes, or exactly 32 raw bytes), got invalid value")
+	return nil
 }
 
 // IsPersistentMode returns true if storage type is not memory

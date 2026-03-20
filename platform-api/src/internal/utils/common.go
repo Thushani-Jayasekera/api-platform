@@ -18,19 +18,44 @@
 package utils
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"platform-api/src/internal/model"
+
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// addFileToZip adds a single file to the zip writer.
+// On error it attempts to close the zip writer before returning.
+func addFileToZip(zipWriter *zip.Writer, fileName string, content []byte) error {
+	fileWriter, err := zipWriter.Create(fileName)
+	if err != nil {
+		if closeErr := zipWriter.Close(); closeErr != nil {
+			return fmt.Errorf("failed to create file in zip: %w (close error: %v)", err, closeErr)
+		}
+		return fmt.Errorf("failed to create file in zip: %w", err)
+	}
+
+	if _, err = fileWriter.Write(content); err != nil {
+		if closeErr := zipWriter.Close(); closeErr != nil {
+			return fmt.Errorf("failed to write file content: %w (close error: %v)", err, closeErr)
+		}
+		return fmt.Errorf("failed to write file content: %w", err)
+	}
+	return nil
+}
 
 // CreateAPIYamlZip creates a ZIP file containing API YAML files
 func CreateAPIYamlZip(apiYamlMap map[string]string) ([]byte, error) {
@@ -39,25 +64,12 @@ func CreateAPIYamlZip(apiYamlMap map[string]string) ([]byte, error) {
 
 	for apiID, yamlContent := range apiYamlMap {
 		fileName := fmt.Sprintf("api-%s.yaml", apiID)
-		fileWriter, err := zipWriter.Create(fileName)
-		if err != nil {
-			if closeErr := zipWriter.Close(); closeErr != nil {
-				return nil, fmt.Errorf("failed to create file in zip: %w (close error: %v)", err, closeErr)
-			}
-			return nil, fmt.Errorf("failed to create file in zip: %w", err)
-		}
-
-		_, err = fileWriter.Write([]byte(yamlContent))
-		if err != nil {
-			if closeErr := zipWriter.Close(); closeErr != nil {
-				return nil, fmt.Errorf("failed to write file content: %w (close error: %v)", err, closeErr)
-			}
-			return nil, fmt.Errorf("failed to write file content: %w", err)
+		if err := addFileToZip(zipWriter, fileName, []byte(yamlContent)); err != nil {
+			return nil, err
 		}
 	}
 
-	err := zipWriter.Close()
-	if err != nil {
+	if err := zipWriter.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close zip writer: %w", err)
 	}
 
@@ -71,25 +83,12 @@ func CreateLLMProviderYamlZip(providerYamlMap map[string]string) ([]byte, error)
 
 	for providerID, yamlContent := range providerYamlMap {
 		fileName := fmt.Sprintf("llm-provider-%s.yaml", providerID)
-		fileWriter, err := zipWriter.Create(fileName)
-		if err != nil {
-			if closeErr := zipWriter.Close(); closeErr != nil {
-				return nil, fmt.Errorf("failed to create file in zip: %w (close error: %v)", err, closeErr)
-			}
-			return nil, fmt.Errorf("failed to create file in zip: %w", err)
-		}
-
-		_, err = fileWriter.Write([]byte(yamlContent))
-		if err != nil {
-			if closeErr := zipWriter.Close(); closeErr != nil {
-				return nil, fmt.Errorf("failed to write file content: %w (close error: %v)", err, closeErr)
-			}
-			return nil, fmt.Errorf("failed to write file content: %w", err)
+		if err := addFileToZip(zipWriter, fileName, []byte(yamlContent)); err != nil {
+			return nil, err
 		}
 	}
 
-	err := zipWriter.Close()
-	if err != nil {
+	if err := zipWriter.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close zip writer: %w", err)
 	}
 
@@ -103,26 +102,73 @@ func CreateLLMProxyYamlZip(proxyYamlMap map[string]string) ([]byte, error) {
 
 	for proxyID, yamlContent := range proxyYamlMap {
 		fileName := fmt.Sprintf("llm-proxy-%s.yaml", proxyID)
-		fileWriter, err := zipWriter.Create(fileName)
-		if err != nil {
-			if closeErr := zipWriter.Close(); closeErr != nil {
-				return nil, fmt.Errorf("failed to create file in zip: %w (close error: %v)", err, closeErr)
-			}
-			return nil, fmt.Errorf("failed to create file in zip: %w", err)
-		}
-
-		_, err = fileWriter.Write([]byte(yamlContent))
-		if err != nil {
-			if closeErr := zipWriter.Close(); closeErr != nil {
-				return nil, fmt.Errorf("failed to write file content: %w (close error: %v)", err, closeErr)
-			}
-			return nil, fmt.Errorf("failed to write file content: %w", err)
+		if err := addFileToZip(zipWriter, fileName, []byte(yamlContent)); err != nil {
+			return nil, err
 		}
 	}
 
-	err := zipWriter.Close()
-	if err != nil {
+	if err := zipWriter.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close zip writer: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// CreateBatchDeploymentTarGz creates a TAR.GZ archive containing deployment YAML files
+// organized in directories by deployment ID. The filename prefix is determined
+// by the artifact kind: api-, llm-provider-, or llm-proxy-.
+// Structure:
+//
+//	batch.tar.gz
+//	├── dep-789/
+//	│   └── api-{artifactID}.yaml
+//	├── dep-456/
+//	│   └── llm-provider-{artifactID}.yaml
+//	└── dep-111/
+//	    └── llm-proxy-{artifactID}.yaml
+//
+// TAR.GZ is used here (over ZIP) because gzip compresses the entire stream as one unit,
+// exploiting the high structural similarity across YAML files in a batch.
+func CreateBatchDeploymentTarGz(deploymentContentMap map[string]*model.DeploymentContent) ([]byte, error) {
+	var buf bytes.Buffer
+	gzWriter, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gzip writer: %w", err)
+	}
+	tarWriter := tar.NewWriter(gzWriter)
+
+	for deploymentID, dc := range deploymentContentMap {
+		var prefix string
+		switch dc.Kind {
+		case "LlmProvider":
+			prefix = "llm-provider"
+		case "LlmProxy":
+			prefix = "llm-proxy"
+		case "Mcp":
+			prefix = "mcp-proxy"
+		default: // RestApi and any future kinds
+			prefix = "api"
+		}
+		fileName := fmt.Sprintf("%s/%s-%s.yaml", deploymentID, prefix, dc.ArtifactID)
+		hdr := &tar.Header{
+			Name:    fileName,
+			Mode:    0644,
+			Size:    int64(len(dc.Content)),
+			ModTime: time.Now(),
+		}
+		if err := tarWriter.WriteHeader(hdr); err != nil {
+			return nil, fmt.Errorf("failed to write tar header for %s: %w", fileName, err)
+		}
+		if _, err := tarWriter.Write(dc.Content); err != nil {
+			return nil, fmt.Errorf("failed to write tar content for %s: %w", fileName, err)
+		}
+	}
+
+	if err := tarWriter.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close tar writer: %w", err)
+	}
+	if err := gzWriter.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close gzip writer: %w", err)
 	}
 
 	return buf.Bytes(), nil
@@ -306,7 +352,7 @@ func GenerateUUID() (string, error) {
 }
 
 // ValidateURL validates a URL with additional checks
-func ValidateURL(ctx context.Context, rawURL string) error {
+func ValidateURL(rawURL string) error {
 	if rawURL == "" {
 		return errors.New("URL is required")
 	}
@@ -342,6 +388,33 @@ func ValidateURL(ctx context.Context, rawURL string) error {
 	if hasTraversalSegments(parsedURL.EscapedPath()) {
 		return errors.New("URL path must not contain traversal segments")
 	}
+
+	return nil
+}
+
+// CheckURLReachability verifies that the given URL is reachable by sending an HTTP HEAD request.
+// It returns an error if the request fails or cannot complete within the given timeout.
+func CheckURLReachability(rawURL string, timeout time.Duration) error {
+	client := &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("too many redirects")
+			}
+			return nil
+		},
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodHead, rawURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request")
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("URL is not reachable")
+	}
+	defer resp.Body.Close() //nolint:errcheck
 
 	return nil
 }

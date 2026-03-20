@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/generated"
+	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/management"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/config"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/policyxds"
@@ -62,13 +62,14 @@ func NewMCPDeploymentService(
 	db storage.Storage,
 	snapshotManager *xds.SnapshotManager,
 	policyManager *policyxds.PolicyManager,
+	policyValidator *config.PolicyValidator,
 ) *MCPDeploymentService {
 	return &MCPDeploymentService{
 		store:           store,
 		db:              db,
 		snapshotManager: snapshotManager,
 		parser:          config.NewParser(),
-		validator:       config.NewMCPValidator(),
+		validator:       config.NewMCPValidator().WithPolicyValidator(policyValidator),
 		transformer:     NewMCPTransformer(),
 		policyManager:   policyManager,
 	}
@@ -104,7 +105,7 @@ func (s *MCPDeploymentService) DeployMCPConfiguration(params MCPDeploymentParams
 	isUpdate = existingConfig != nil
 
 	if s.store != nil {
-		if conflicting, err := s.store.GetByNameVersion(name, version); err == nil {
+		if conflicting, _ := s.store.GetByKindNameAndVersion(models.KindMcp, name, version); conflicting != nil {
 			// For updates: only error if the conflict is with a different API
 			// For creates: any conflict is an error
 			if !isUpdate || conflicting.UUID != apiID {
@@ -140,7 +141,6 @@ func (s *MCPDeploymentService) DeployMCPConfiguration(params MCPDeploymentParams
 		CreatedAt:           now,
 		UpdatedAt:           now,
 		DeployedAt:          nil,
-		DeployedVersion:     0,
 	}
 
 	// Try to save/update the configuration
@@ -230,9 +230,9 @@ func (s *MCPDeploymentService) saveOrUpdateConfig(storedCfg *models.StoredConfig
 func (s *MCPDeploymentService) updateExistingConfig(newConfig *models.StoredConfig,
 	logger *slog.Logger) (bool, error) {
 	// Get existing config
-	existing, err := s.store.GetByNameVersion(newConfig.DisplayName, newConfig.Version)
-	if err != nil {
-		return false, fmt.Errorf("failed to get existing config: %w", err)
+	existing, err := s.store.GetByKindNameAndVersion(newConfig.Kind, newConfig.DisplayName, newConfig.Version)
+	if err != nil || existing == nil {
+		return false, fmt.Errorf("failed to get existing config: config not found")
 	}
 
 	// Backup original state for potential rollback
@@ -245,7 +245,6 @@ func (s *MCPDeploymentService) updateExistingConfig(newConfig *models.StoredConf
 	existing.Status = models.StatusPending
 	existing.UpdatedAt = now
 	existing.DeployedAt = nil
-	existing.DeployedVersion = 0
 
 	// Update database first (only if persistent mode)
 	if s.db != nil {

@@ -27,7 +27,6 @@ type DeploymentNotification struct {
 	CreatedAt         time.Time        `json:"createdAt" binding:"required"`
 	UpdatedAt         time.Time        `json:"updatedAt" binding:"required"`
 	DeployedAt        *time.Time       `json:"deployedAt,omitempty"`
-	DeployedVersion   *int             `json:"deployedVersion,omitempty"`
 	ProjectIdentifier string           `json:"projectIdentifier" binding:"required"`
 }
 
@@ -65,4 +64,24 @@ type GatewayDeploymentResponse struct {
 	DeploymentId int64  `json:"deploymentId"`
 	Message      string `json:"message"`
 	Created      bool   `json:"created"`
+}
+
+// GatewayDeploymentInfo represents a single deployment for a gateway
+// Used to compare local gateway state with platform-api state
+type GatewayDeploymentInfo struct {
+	ArtifactID   string    `json:"artifactId"`   // Artifact identifier (handle) - REST API, LLM Provider, or LLM Proxy
+	DeploymentID string    `json:"deploymentId"` // Unique deployment artifact ID
+	Kind         string    `json:"kind"`         // Artifact type: RestAPI, LLMProvider, LLMProxy
+	State        string    `json:"state"`        // Deployment state: DEPLOYED or UNDEPLOYED
+	DeployedAt   time.Time `json:"deployedAt"`   // Timestamp when the deployment action was performed
+}
+
+// GatewayDeploymentsResponse represents the response for listing gateway deployments
+type GatewayDeploymentsResponse struct {
+	Deployments []GatewayDeploymentInfo `json:"deployments"`
+}
+
+// DeploymentsBatchFetchRequest represents the request body for batch fetching deployments
+type DeploymentsBatchFetchRequest struct {
+	DeploymentIDs []string `json:"deploymentIds" binding:"required,min=1"`
 }

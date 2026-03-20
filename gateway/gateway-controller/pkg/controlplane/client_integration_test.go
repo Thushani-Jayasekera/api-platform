@@ -30,6 +30,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
+	"github.com/wso2/api-platform/common/eventhub"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/config"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/storage"
 )
@@ -37,6 +38,24 @@ import (
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
+
+type integrationTestEventHub struct{}
+
+func (m *integrationTestEventHub) Initialize() error { return nil }
+
+func (m *integrationTestEventHub) RegisterGateway(string) error { return nil }
+
+func (m *integrationTestEventHub) PublishEvent(string, eventhub.Event) error { return nil }
+
+func (m *integrationTestEventHub) Subscribe(string) (<-chan eventhub.Event, error) { return nil, nil }
+
+func (m *integrationTestEventHub) Unsubscribe(string, <-chan eventhub.Event) error { return nil }
+
+func (m *integrationTestEventHub) UnsubscribeAll(string) error { return nil }
+
+func (m *integrationTestEventHub) CleanUpEvents() error { return nil }
+
+func (m *integrationTestEventHub) Close() error { return nil }
 
 // mockWebSocketServer creates a mock WebSocket server for testing
 func mockWebSocketServer(t *testing.T, handler func(*websocket.Conn)) *httptest.Server {
@@ -52,19 +71,33 @@ func mockWebSocketServer(t *testing.T, handler func(*websocket.Conn)) *httptest.
 	}))
 }
 
-// createTestClientWithHost creates a test client pointing to a specific host
-func createTestClientWithHost(t *testing.T, host string) *Client {
+func createIntegrationTestClient(t *testing.T) *Client {
 	t.Helper()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	store := storage.NewConfigStore()
+	return createIntegrationTestClientWithConfig(t, config.ControlPlaneConfig{
+		Host:             "control-plane.example.com",
+		Token:            "test-token",
+		ReconnectInitial: 1 * time.Second,
+		ReconnectMax:     30 * time.Second,
+	})
+}
 
-	cfg := config.ControlPlaneConfig{
+// createIntegrationTestClientWithHost creates a test client pointing to a specific host.
+func createIntegrationTestClientWithHost(t *testing.T, host string) *Client {
+	t.Helper()
+	return createIntegrationTestClientWithConfig(t, config.ControlPlaneConfig{
 		Host:               host,
 		Token:              "test-token",
 		ReconnectInitial:   100 * time.Millisecond,
 		ReconnectMax:       1 * time.Second,
 		InsecureSkipVerify: true,
-	}
+	})
+}
+
+func createIntegrationTestClientWithConfig(t *testing.T, cfg config.ControlPlaneConfig) *Client {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	store := storage.NewConfigStore()
+	mockHub := &integrationTestEventHub{}
 
 	routerConfig := &config.RouterConfig{
 		VHosts: config.VHostsConfig{
@@ -73,7 +106,26 @@ func createTestClientWithHost(t *testing.T, host string) *Client {
 		},
 	}
 
-	return NewClient(cfg, logger, store, nil, nil, nil, routerConfig, nil, nil, nil, nil, nil, nil, nil, nil)
+	apiKeyConfig := &config.APIKeyConfig{
+		Algorithm:            "sha256",
+		MinKeyLength:         32,
+		MaxKeyLength:         128,
+		APIKeysPerUserPerAPI: 5,
+	}
+	systemConfig := &config.Config{
+		Controller: config.Controller{
+			Server: config.ServerConfig{
+				GatewayID: "test-gateway",
+			},
+		},
+		Router: *routerConfig,
+		APIKey: *apiKeyConfig,
+	}
+
+	client := NewClient(cfg, logger, store, nil, nil, nil, routerConfig, nil, apiKeyConfig, nil, systemConfig, nil, nil, nil, nil, mockHub)
+	require.NotNil(t, client.eventHub)
+	require.Equal(t, "test-gateway", client.gatewayID)
+	return client
 }
 
 func TestClient_ConnectToMockServer(t *testing.T) {
@@ -99,7 +151,7 @@ func TestClient_ConnectToMockServer(t *testing.T) {
 
 	// Create client - note: we can't directly test Connect() because it uses wss://
 	// Instead we test the message handling logic
-	client := createTestClientWithHost(t, host)
+	client := createIntegrationTestClientWithHost(t, host)
 	defer client.Stop()
 
 	// Verify client was created with correct host
@@ -110,16 +162,14 @@ func TestClient_ConnectToMockServer(t *testing.T) {
 }
 
 func TestClient_handleMessage_APIDeployedEvent(t *testing.T) {
-	client := createTestClient(t)
+	client := createIntegrationTestClient(t)
 
 	// Create a valid api.deployed event
 	event := map[string]interface{}{
 		"type": "api.deployed",
 		"payload": map[string]interface{}{
 			"apiId":        "test-api-123",
-			"environment":  "production",
 			"deploymentId": "rev-1",
-			"vhost":        "api.example.com",
 		},
 		"timestamp":     time.Now().Format(time.RFC3339),
 		"correlationId": "corr-12345",
@@ -131,14 +181,13 @@ func TestClient_handleMessage_APIDeployedEvent(t *testing.T) {
 }
 
 func TestClient_handleMessage_APIDeployedEvent_EmptyAPIID(t *testing.T) {
-	client := createTestClient(t)
+	client := createIntegrationTestClient(t)
 
 	// Create an api.deployed event with empty API ID
 	event := map[string]interface{}{
 		"type": "api.deployed",
 		"payload": map[string]interface{}{
-			"apiId":       "", // Empty API ID
-			"environment": "production",
+			"apiId": "", // Empty API ID
 		},
 		"timestamp":     time.Now().Format(time.RFC3339),
 		"correlationId": "corr-12345",
@@ -150,7 +199,7 @@ func TestClient_handleMessage_APIDeployedEvent_EmptyAPIID(t *testing.T) {
 }
 
 func TestClient_handleAPIDeployedEvent_InvalidPayload(t *testing.T) {
-	client := createTestClient(t)
+	client := createIntegrationTestClient(t)
 
 	// Event with malformed payload
 	event := map[string]interface{}{
@@ -206,9 +255,6 @@ func TestConnectionState_ThreadSafety(t *testing.T) {
 }
 
 func TestClient_calculateNextRetryDelay_EdgeCases(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	store := storage.NewConfigStore()
-
 	// Test with very small initial delay
 	cfg := config.ControlPlaneConfig{
 		Host:             "test.example.com",
@@ -216,8 +262,7 @@ func TestClient_calculateNextRetryDelay_EdgeCases(t *testing.T) {
 		ReconnectInitial: 1 * time.Millisecond,
 		ReconnectMax:     10 * time.Millisecond,
 	}
-	routerConfig := &config.RouterConfig{}
-	client := NewClient(cfg, logger, store, nil, nil, nil, routerConfig, nil, nil, nil, nil, nil, nil, nil, nil)
+	client := createIntegrationTestClientWithConfig(t, cfg)
 
 	// Test multiple retries
 	for i := 0; i < 20; i++ {
@@ -238,7 +283,7 @@ func TestClient_calculateNextRetryDelay_EdgeCases(t *testing.T) {
 }
 
 func TestClient_Start_WithToken(t *testing.T) {
-	client := createTestClient(t)
+	client := createIntegrationTestClient(t)
 
 	// Start will try to connect in background
 	err := client.Start()
@@ -254,7 +299,7 @@ func TestClient_Start_WithToken(t *testing.T) {
 }
 
 func TestClient_MultipleStops(t *testing.T) {
-	client := createTestClient(t)
+	client := createIntegrationTestClient(t)
 
 	// First stop should succeed
 	client.Stop()
@@ -266,7 +311,7 @@ func TestClient_MultipleStops(t *testing.T) {
 }
 
 func TestClient_StateTransitions(t *testing.T) {
-	client := createTestClient(t)
+	client := createIntegrationTestClient(t)
 
 	// Test all valid state transitions
 	transitions := []struct {
@@ -293,7 +338,7 @@ func TestClient_StateTransitions(t *testing.T) {
 }
 
 func TestClient_handleMessage_AllEventTypes(t *testing.T) {
-	client := createTestClient(t)
+	client := createIntegrationTestClient(t)
 
 	testCases := []struct {
 		name    string
@@ -305,7 +350,7 @@ func TestClient_handleMessage_AllEventTypes(t *testing.T) {
 		},
 		{
 			name:    "api.deployed",
-			message: `{"type": "api.deployed", "payload": {"apiId": "api-1", "environment": "prod"}, "timestamp": "2025-01-30T12:00:00Z", "correlationId": "corr-1"}`,
+			message: `{"type": "api.deployed", "payload": {"apiId": "api-1"}, "timestamp": "2025-01-30T12:00:00Z", "correlationId": "corr-1"}`,
 		},
 		{
 			name:    "api.undeployed",
@@ -313,7 +358,7 @@ func TestClient_handleMessage_AllEventTypes(t *testing.T) {
 		},
 		{
 			name:    "api.deleted",
-			message: `{"type": "api.deleted", "payload": {"apiId": "api-1", "vhost": "example.com", "environment": "production"}, "timestamp": "2025-01-30T12:00:00Z", "correlationId": "corr-1"}`,
+			message: `{"type": "api.deleted", "payload": {"apiId": "api-1"}, "timestamp": "2025-01-30T12:00:00Z", "correlationId": "corr-1"}`,
 		},
 		{
 			name:    "unknown.event",
@@ -358,7 +403,7 @@ func TestClient_Close_WithConnection(t *testing.T) {
 	}
 
 	// Create client and inject the connection
-	client := createTestClient(t)
+	client := createIntegrationTestClient(t)
 	client.state.Conn = conn
 	client.state.Current = Connected
 
@@ -407,7 +452,7 @@ func TestClient_IsConnected_WithConnection(t *testing.T) {
 	defer conn.Close()
 
 	// Create client and inject connection
-	client := createTestClient(t)
+	client := createIntegrationTestClient(t)
 	client.state.Conn = conn
 	client.state.Current = Connected
 
@@ -424,14 +469,14 @@ func TestClient_IsConnected_WithConnection(t *testing.T) {
 }
 
 func TestClient_handleMessage_BinaryMessage(t *testing.T) {
-	client := createTestClient(t)
+	client := createIntegrationTestClient(t)
 
 	// Binary messages should be ignored
 	client.handleMessage(websocket.BinaryMessage, []byte{0x00, 0x01, 0x02, 0x03})
 }
 
 func TestClient_handleMessage_PingPong(t *testing.T) {
-	client := createTestClient(t)
+	client := createIntegrationTestClient(t)
 
 	// Ping/Pong messages should be ignored
 	client.handleMessage(websocket.PingMessage, []byte("ping"))
@@ -443,9 +488,7 @@ func TestAPIDeployedEvent_JSONParsing(t *testing.T) {
 		"type": "api.deployed",
 		"payload": {
 			"apiId": "api-123",
-			"environment": "production",
-			"deploymentId": "rev-1",
-			"vhost": "api.example.com"
+			"deploymentId": "rev-1"
 		},
 		"timestamp": "2025-01-30T12:00:00Z",
 		"correlationId": "corr-789"

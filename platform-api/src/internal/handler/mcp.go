@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"platform-api/src/api"
 	"platform-api/src/internal/constants"
@@ -120,25 +121,17 @@ func (h *MCPProxyHandler) ListMCPProxies(c *gin.Context) {
 		offset = 0
 	}
 
-	resp, err := h.service.List(orgID, limit, offset)
+	var resp *api.MCPProxyListResponse
+	if projectIDPtr != nil {
+		resp, err = h.service.ListByProject(orgID, *projectIDPtr, limit, offset)
+	} else {
+		resp, err = h.service.List(orgID, limit, offset)
+	}
+
 	if err != nil {
 		h.handleServiceError(c, err)
 		return
 	}
-
-	// Filter by project ID if provided
-	// TODO: Implement project ID filtering at the database level in the service/repository layer for better performance
-	if projectIDPtr != nil {
-		filtered := make([]api.MCPProxyListItem, 0)
-		for _, item := range resp.List {
-			if item.ProjectId != nil && *item.ProjectId == *projectIDPtr {
-				filtered = append(filtered, item)
-			}
-		}
-		resp.List = filtered
-		resp.Count = len(filtered)
-	}
-
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -221,12 +214,16 @@ func (h *MCPProxyHandler) FetchMCPProxyServerInfo(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.service.FetchServerInfo(&req)
+	resp, err := h.service.FetchServerInfo(orgID, &req)
 	if err != nil {
 		switch {
 		case errors.Is(err, constants.ErrInvalidURL):
 			h.slogger.Error("Invalid URL provided for MCP server info fetch", "error", err, "inputUrl", req.Url)
 			c.JSON(http.StatusBadRequest, utils.NewErrorResponse(400, "Bad Request", err.Error()))
+			return
+		case errors.Is(err, constants.ErrURLUnreachable):
+			h.slogger.Error("MCP server URL is unreachable", "error", err, "inputUrl", req.Url)
+			c.JSON(http.StatusBadRequest, utils.NewErrorResponse(400, "Bad Request", strings.Split(err.Error(), ":")[0]))
 			return
 		default:
 			h.handleServiceError(c, err)
@@ -252,6 +249,9 @@ func (h *MCPProxyHandler) handleServiceError(c *gin.Context, err error) {
 	case errors.Is(err, constants.ErrProjectNotFound):
 		h.slogger.Error("MCP request validation failed", "reason", "Project not found")
 		c.JSON(http.StatusBadRequest, utils.NewErrorResponse(400, "Bad Request", "Project not found"))
+	case errors.Is(err, constants.ErrMCPProxyLimitReached):
+		h.slogger.Error("MCP proxy limit reached", "reason", err.Error())
+		c.JSON(http.StatusConflict, utils.NewErrorResponse(409, "Conflict", "MCP proxy limit reached for the organization"))
 	default:
 		h.slogger.Error("MCP proxy service error", "error", err)
 		c.JSON(http.StatusInternalServerError, utils.NewErrorResponse(500, "Internal Server Error", "An unexpected error occurred"))

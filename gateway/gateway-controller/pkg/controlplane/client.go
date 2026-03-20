@@ -19,11 +19,14 @@
 package controlplane
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -31,10 +34,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/generated"
+	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/management"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
 
 	"github.com/gorilla/websocket"
+	"github.com/wso2/api-platform/common/eventhub"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/config"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/lazyresourcexds"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/policy"
@@ -103,6 +107,7 @@ type Client struct {
 	cancel                      context.CancelFunc
 	stopChan                    chan struct{}
 	wg                          sync.WaitGroup
+	writeMu                     sync.Mutex // serializes writes to the WebSocket connection
 	store                       *storage.ConfigStore
 	db                          storage.Storage
 	snapshotManager             *xds.SnapshotManager
@@ -117,8 +122,11 @@ type Client struct {
 	routerConfig                *config.RouterConfig
 	policyManager               *policyxds.PolicyManager
 	systemConfig                *config.Config
-	policyDefinitions           map[string]api.PolicyDefinition
+	policyDefinitions           map[string]models.PolicyDefinition
 	subscriptionSnapshotManager *subscriptionxds.SnapshotManager
+	eventHub                    eventhub.EventHub
+	gatewayID                   string
+	gatewayPath                 string // cached gateway path from well-known discovery
 }
 
 // NewClient creates a new control plane client
@@ -134,12 +142,23 @@ func NewClient(
 	apiKeyConfig *config.APIKeyConfig,
 	policyManager *policyxds.PolicyManager,
 	systemConfig *config.Config,
-	policyDefinitions map[string]api.PolicyDefinition,
+	policyDefinitions map[string]models.PolicyDefinition,
 	lazyResourceManager *lazyresourcexds.LazyResourceStateManager,
 	templateDefinitions map[string]*api.LLMProviderTemplate,
 	subSnapshotManager *subscriptionxds.SnapshotManager,
+	eventHubInstance eventhub.EventHub,
 ) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	deploymentService := utils.NewAPIDeploymentService(store, db, snapshotManager, validator, routerConfig)
+	apiKeyService := utils.NewAPIKeyService(store, db, apiKeyXDSManager, apiKeyConfig)
+
+	var gatewayID string
+	if eventHubInstance != nil {
+		gatewayID = systemConfig.Controller.Server.GatewayID
+		deploymentService.SetEventHub(eventHubInstance, gatewayID)
+		apiKeyService.SetEventHub(eventHubInstance, gatewayID)
+	}
 
 	client := &Client{
 		config:                      cfg,
@@ -149,14 +168,16 @@ func NewClient(
 		snapshotManager:             snapshotManager,
 		parser:                      config.NewParser(),
 		validator:                   validator,
-		deploymentService:           utils.NewAPIDeploymentService(store, db, snapshotManager, validator, routerConfig),
-		apiKeyService:               utils.NewAPIKeyService(store, db, apiKeyXDSManager, apiKeyConfig),
+		deploymentService:           deploymentService,
+		apiKeyService:               apiKeyService,
 		apiKeyXDSManager:            apiKeyXDSManager,
 		routerConfig:                routerConfig,
 		policyManager:               policyManager,
 		systemConfig:                systemConfig,
 		policyDefinitions:           policyDefinitions,
 		subscriptionSnapshotManager: subSnapshotManager,
+		eventHub:                    eventHubInstance,
+		gatewayID:                   gatewayID,
 		state: &ConnectionState{
 			Current:        Disconnected,
 			Conn:           nil,
@@ -189,6 +210,7 @@ func NewClient(
 		db,
 		snapshotManager,
 		policyManager,
+		policyValidator,
 	)
 
 	// Initialize API utils service with the proper base URL using the method
@@ -212,7 +234,7 @@ func (c *Client) Start() error {
 
 	c.logger.Info("Starting control plane client",
 		slog.String("host", c.config.Host),
-		slog.String("websocket_url", c.getWebSocketURL()),
+		slog.String("websocket_url", c.getWebSocketConnectURL()),
 	)
 
 	// Start connection in background
@@ -230,16 +252,21 @@ func (c *Client) Stop() {
 	close(c.stopChan)
 	c.cancel()
 
-	// Close active connection if exists
+	// Close active connection if exists: nil out conn under state.mu first so no
+	// new sendMessage call can obtain it, then acquire writeMu to drain any
+	// in-flight write before sending the close frame.
 	c.state.mu.Lock()
-	if c.state.Conn != nil {
-		// Send close frame with normal closure code
-		closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Gateway shutting down")
-		_ = c.state.Conn.WriteMessage(websocket.CloseMessage, closeMsg)
-		_ = c.state.Conn.Close()
-		c.state.Conn = nil
-	}
+	conn := c.state.Conn
+	c.state.Conn = nil
 	c.state.mu.Unlock()
+
+	if conn != nil {
+		closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Gateway shutting down")
+		c.writeMu.Lock()
+		_ = conn.WriteMessage(websocket.CloseMessage, closeMsg)
+		c.writeMu.Unlock()
+		_ = conn.Close()
+	}
 
 	// Wait for goroutines to finish
 	c.wg.Wait()
@@ -251,8 +278,9 @@ func (c *Client) Stop() {
 func (c *Client) Connect() error {
 	c.setState(Connecting)
 
+	wsURL := c.resolveWebSocketConnectURL()
 	c.logger.Info("Connecting to control plane",
-		slog.String("url", c.getWebSocketURL()),
+		slog.String("url", wsURL),
 		slog.Int("retry_count", c.state.RetryCount),
 	)
 
@@ -273,8 +301,7 @@ func (c *Client) Connect() error {
 	headers := http.Header{}
 	headers.Add("api-key", c.config.Token)
 
-	// Dial WebSocket
-	wsURL := c.getWebSocketURL() + "/gateways/connect"
+	// Dial WebSocket: URL from well-known discovery with fallback to default path.
 	conn, resp, err := dialer.Dial(wsURL, headers)
 	if err != nil {
 		if resp != nil {
@@ -345,11 +372,181 @@ func (c *Client) Connect() error {
 		c.syncSubscriptionsForExistingAPIs(gwID)
 	}(gatewayID)
 
+	// Push gateway manifest to the control plane on connect
+	c.wg.Add(1)
+	go func(gwID string) {
+		defer c.wg.Done()
+		c.pushGatewayManifestOnConnect(gwID)
+	}(gatewayID)
+
 	// Start heartbeat monitor
 	c.wg.Add(1)
 	go c.heartbeatMonitor()
 
 	return nil
+}
+
+// gatewayWellKnownResponse matches APIM well-known JSON: {"gatewayPath":"internal/data/v1"}.
+// Extra fields from the server are ignored.
+type gatewayWellKnownResponse struct {
+	GatewayPath string `json:"gatewayPath"`
+}
+
+// resolveWebSocketConnectURL resolves the registration URL using the control plane well-known endpoint.
+// Falls back to the default configured URL when discovery fails.
+// The discovered gateway path is cached for reuse within the file.
+func (c *Client) resolveWebSocketConnectURL() string {
+	// Use cached gateway path if available (read under lock)
+	c.state.mu.RLock()
+	cachedPath := c.gatewayPath
+	c.state.mu.RUnlock()
+
+	if cachedPath != "" {
+		resolvedURL := fmt.Sprintf("wss://%s%s/ws/gateways/connect", c.config.Host, cachedPath)
+		c.logger.Debug("Using cached gateway path for WebSocket connect URL",
+			slog.String("gateway_path", cachedPath),
+			slog.String("resolved_url", resolvedURL),
+		)
+		return resolvedURL
+	}
+
+	gatewayPath, err := c.discoverGatewayPath()
+	if err != nil {
+		c.logger.Debug("Failed to resolve gateway path from well-known endpoint, falling back to configured URL",
+			slog.Any("error", err),
+		)
+		return c.getWebSocketConnectURL()
+	}
+
+	// Cache the discovered gateway path for future use (write under lock)
+	c.state.mu.Lock()
+	c.gatewayPath = gatewayPath
+	c.state.mu.Unlock()
+
+	// Update apiUtilsService base URL to use the discovered gateway path
+	c.apiUtilsService.SetBaseURL(c.getRestAPIBaseURL())
+
+	resolvedURL := fmt.Sprintf("wss://%s%s/ws/gateways/connect", c.config.Host, gatewayPath)
+	c.logger.Debug("Resolved WebSocket connect URL from well-known endpoint",
+		slog.String("gateway_path", gatewayPath),
+		slog.String("resolved_url", resolvedURL),
+	)
+
+	return resolvedURL
+}
+
+// GetGatewayPath returns the cached gateway path discovered from the well-known endpoint.
+// Returns an empty string if the path has not been discovered yet.
+func (c *Client) GetGatewayPath() string {
+	c.state.mu.RLock()
+	defer c.state.mu.RUnlock()
+	return c.gatewayPath
+}
+
+// discoverGatewayPath fetches the gateway websocket base path from the control plane well-known endpoint.
+func (c *Client) discoverGatewayPath() (string, error) {
+	wellKnownURL := fmt.Sprintf("https://%s/internal/gateway/.well-known", c.config.Host)
+
+	httpClient := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: c.config.InsecureSkipVerify},
+		},
+	}
+
+	req, err := http.NewRequestWithContext(c.ctx, http.MethodGet, wellKnownURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create well-known request: %w", err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to call well-known endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("well-known endpoint returned non-200 status: %d", resp.StatusCode)
+	}
+
+	var wellKnownResp gatewayWellKnownResponse
+	if err := json.NewDecoder(resp.Body).Decode(&wellKnownResp); err != nil {
+		return "", fmt.Errorf("failed to decode well-known response: %w", err)
+	}
+
+	gatewayPath := normalizeGatewayPath(wellKnownResp.GatewayPath)
+	if gatewayPath == "" {
+		return "", fmt.Errorf("well-known response missing gatewayPath")
+	}
+
+	return gatewayPath, nil
+}
+
+func normalizeGatewayPath(path string) string {
+	trimmed := strings.Trim(strings.TrimSpace(path), "/")
+	if trimmed == "" {
+		return ""
+	}
+	return "/" + trimmed
+}
+
+// sendMessage writes a message to the WebSocket connection with proper serialization
+func (c *Client) sendMessage(message []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	c.state.mu.RLock()
+	conn := c.state.Conn
+	c.state.mu.RUnlock()
+
+	if conn == nil {
+		return fmt.Errorf("no active WebSocket connection")
+	}
+
+	return conn.WriteMessage(websocket.TextMessage, message)
+}
+
+// sendDeploymentAck sends a deployment acknowledgement message back to the control plane
+func (c *Client) sendDeploymentAck(deploymentID, artifactID, resourceType, action, status string, performedAt time.Time, errorCode string) {
+	// Skip ack if control plane is not configured — no connection will be active.
+	if c.config.Host == "" {
+		return
+	}
+	ack := DeploymentAckMessage{
+		Type: "deployment.ack",
+		Payload: DeploymentAckPayload{
+			DeploymentID: deploymentID,
+			ArtifactID:   artifactID,
+			ResourceType: resourceType,
+			Action:       action,
+			Status:       status,
+			PerformedAt:  performedAt,
+			ErrorCode:    errorCode,
+		},
+	}
+
+	ackJSON, err := json.Marshal(ack)
+	if err != nil {
+		c.logger.Error("Failed to marshal deployment ack",
+			slog.String("deployment_id", deploymentID),
+			slog.Any("error", err))
+		return
+	}
+
+	if err := c.sendMessage(ackJSON); err != nil {
+		c.logger.Error("Failed to send deployment ack",
+			slog.String("deployment_id", deploymentID),
+			slog.String("artifact_id", artifactID),
+			slog.Any("error", err))
+		return
+	}
+
+	c.logger.Info("Deployment ack sent",
+		slog.String("deployment_id", deploymentID),
+		slog.String("artifact_id", artifactID),
+		slog.String("resource_type", resourceType),
+		slog.String("action", action),
+		slog.String("status", status))
 }
 
 // waitForConnectionAck waits for the connection.ack message from the server
@@ -551,19 +748,21 @@ func (c *Client) syncSubscriptionsForExistingAPIs(gatewayID string) {
 
 // Close closes the WebSocket connection
 func (c *Client) Close() error {
+	// Nil out conn under state.mu first so no new sendMessage call can obtain
+	// it, then acquire writeMu to drain any in-flight write before sending the
+	// close frame.
 	c.state.mu.Lock()
-	defer c.state.mu.Unlock()
+	conn := c.state.Conn
+	c.state.Conn = nil
+	c.setStateNoLock(Disconnected)
+	c.state.mu.Unlock()
 
-	if c.state.Conn != nil {
-		// Send close frame with normal closure code
+	if conn != nil {
 		closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Client closing connection")
-		_ = c.state.Conn.WriteMessage(websocket.CloseMessage, closeMsg)
-
-		err := c.state.Conn.Close()
-		c.state.Conn = nil
-		c.setStateNoLock(Disconnected)
-
-		return err
+		c.writeMu.Lock()
+		_ = conn.WriteMessage(websocket.CloseMessage, closeMsg)
+		c.writeMu.Unlock()
+		return conn.Close()
 	}
 
 	return nil
@@ -799,6 +998,8 @@ func (c *Client) handleMessage(messageType int, message []byte) {
 		c.handleMCPProxyUndeploymentEvent(event)
 	case "mcpproxy.deleted":
 		c.handleMCPProxyDeletedEvent(event)
+	case "application.updated":
+		c.handleApplicationUpdatedEvent(event)
 	default:
 		c.logger.Info("Received unknown event type (will be processed when handlers are implemented)",
 			slog.String("type", eventType),
@@ -953,22 +1154,30 @@ func (c *Client) handleAPIDeployedEvent(event map[string]interface{}) {
 	c.logger.Info("Processing API deployment",
 		slog.String("api_id", apiID),
 		slog.String("deployment_id", deployedEvent.Payload.DeploymentID),
-		slog.String("vhost", deployedEvent.Payload.VHost),
 		slog.String("correlation_id", deployedEvent.CorrelationID),
 	)
 
 	// Fetch API definition and deploy
+	// (deploymentService handles DB + event publishing when eventHub is set)
 	result, err := c.fetchAndDeployAPI(apiID, deployedEvent.CorrelationID)
 	if err != nil {
-		// Error already logged in fetchAndDeployAPI
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, apiID, "api", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
 	// Update policy engine xDS snapshot (best-effort)
-	if err := c.updatePolicyForDeployment(apiID, deployedEvent.CorrelationID, result); err != nil {
-		// Error already logged in updatePolicyForDeployment
-		return
+	// Skip when eventHub is set — EventListener handles policy derivation
+	if c.eventHub == nil {
+		if err := c.updatePolicyForDeployment(apiID, deployedEvent.CorrelationID, result); err != nil {
+			c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, apiID, "api", "deploy", "failed",
+				deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
+			return
+		}
 	}
+
+	c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, apiID, "api", "deploy", "success",
+		deployedEvent.Payload.PerformedAt, "")
 
 	c.logger.Info("Successfully processed API deployment event",
 		slog.String("api_id", apiID),
@@ -1010,8 +1219,6 @@ func (c *Client) handleAPIUndeployedEvent(event map[string]interface{}) {
 
 	c.logger.Info("Processing API undeployment",
 		slog.String("api_id", apiID),
-		slog.String("environment", undeployedEvent.Payload.Environment),
-		slog.String("vhost", undeployedEvent.Payload.VHost),
 		slog.String("correlation_id", undeployedEvent.CorrelationID),
 	)
 
@@ -1022,7 +1229,9 @@ func (c *Client) handleAPIUndeployedEvent(event map[string]interface{}) {
 			c.logger.Warn("API configuration not found for undeployment",
 				slog.String("api_id", apiID),
 			)
-			// Not an error - the API might already be undeployed or deleted
+			// Still send success ack - the API is already undeployed
+			c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, apiID, "api", "undeploy", "success",
+				undeployedEvent.Payload.PerformedAt, "")
 			return
 		}
 		// Real storage error - log and abort
@@ -1031,13 +1240,14 @@ func (c *Client) handleAPIUndeployedEvent(event map[string]interface{}) {
 			slog.String("correlation_id", undeployedEvent.CorrelationID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, apiID, "api", "undeploy", "failed",
+			undeployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
 	// Set status to undeployed (preserve config, keys, and policies)
 	apiConfig.Status = models.StatusUndeployed
 	apiConfig.UpdatedAt = time.Now()
-	// Keep DeployedVersion as-is - it tracks when it was last deployed
 
 	// Update database (only if persistent mode)
 	if c.db != nil {
@@ -1046,24 +1256,44 @@ func (c *Client) handleAPIUndeployedEvent(event map[string]interface{}) {
 				slog.String("api_id", apiID),
 				slog.Any("error", err),
 			)
+			c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, apiID, "api", "undeploy", "failed",
+				undeployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 			return
 		}
 	}
 
-	// Update in-memory store
-	if err := c.store.Update(apiConfig); err != nil {
-		c.logger.Error("Failed to update config status in memory store",
-			slog.String("api_id", apiID),
-			slog.Any("error", err),
-		)
-		return
+	if c.eventHub != nil {
+		// Event-driven mode: publish event; EventListener handles store/xDS
+		evt := eventhub.Event{
+			EventType: eventhub.EventTypeAPI,
+			Action:    "UPDATE",
+			EntityID:  apiID,
+			EventID:   undeployedEvent.CorrelationID,
+		}
+		if err := c.eventHub.PublishEvent(c.gatewayID, evt); err != nil {
+			c.logger.Error("Failed to publish API undeployment event", slog.Any("error", err))
+		}
+	} else {
+		// Update in-memory store
+		if err := c.store.Update(apiConfig); err != nil {
+			c.logger.Error("Failed to update config status in memory store",
+				slog.String("api_id", apiID),
+				slog.Any("error", err),
+			)
+			c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, apiID, "api", "undeploy", "failed",
+				undeployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
+			return
+		}
+
+		// Note: We keep API keys and policies for potential redeploy
+		// They will be reused if the API is redeployed
+
+		// Update xDS snapshot asynchronously (undeployed APIs will be filtered out)
+		c.updateXDSSnapshotAsync(apiID, undeployedEvent.CorrelationID, false, true)
 	}
 
-	// Note: We keep API keys and policies for potential redeploy
-	// They will be reused if the API is redeployed
-
-	// Update xDS snapshot asynchronously (undeployed APIs will be filtered out)
-	c.updateXDSSnapshotAsync(apiID, undeployedEvent.CorrelationID, false, true)
+	c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, apiID, "api", "undeploy", "success",
+		undeployedEvent.Payload.PerformedAt, "")
 
 	c.logger.Info("Successfully processed API undeployment event",
 		slog.String("api_id", apiID),
@@ -1209,30 +1439,43 @@ func (c *Client) cleanupOrphanedResources(apiID, correlationID string) {
 		}
 	}
 
-	// Check and clean up stale API keys from memory store
-	if err := c.store.RemoveAPIKeysByAPI(apiID); err != nil {
-		c.logger.Warn("Failed to remove stale API keys from memory store",
-			slog.String("api_id", apiID),
-			slog.Any("error", err),
-		)
+	if c.eventHub != nil {
+		// Event-driven mode: publish event; EventListener handles store/xDS/policy cleanup
+		evt := eventhub.Event{
+			EventType: eventhub.EventTypeAPI,
+			Action:    "DELETE",
+			EntityID:  apiID,
+			EventID:   correlationID,
+		}
+		if err := c.eventHub.PublishEvent(c.gatewayID, evt); err != nil {
+			c.logger.Error("Failed to publish orphan cleanup event", slog.Any("error", err))
+		}
 	} else {
-		c.logger.Debug("Cleaned up any stale API keys from memory store",
+		// Check and clean up stale API keys from memory store
+		if err := c.store.RemoveAPIKeysByAPI(apiID); err != nil {
+			c.logger.Warn("Failed to remove stale API keys from memory store",
+				slog.String("api_id", apiID),
+				slog.Any("error", err),
+			)
+		} else {
+			c.logger.Debug("Cleaned up any stale API keys from memory store",
+				slog.String("api_id", apiID),
+			)
+		}
+
+		// Note: Cannot remove stale API keys from policy engine via xDS without API config
+		// (requires API name and version which are only available in the config)
+		// The xDS snapshot update below will help clean up stale routes
+		c.logger.Debug("Skipping API key removal from policy engine (requires API config metadata)",
 			slog.String("api_id", apiID),
 		)
+
+		// Check and clean up stale policy configuration
+		c.removePolicyConfiguration(apiID, correlationID, true)
+
+		// Update xDS snapshot to remove any stale routes
+		c.updateXDSSnapshotAsync(apiID, correlationID, true, false)
 	}
-
-	// Note: Cannot remove stale API keys from policy engine via xDS without API config
-	// (requires API name and version which are only available in the config)
-	// The xDS snapshot update below will help clean up stale routes
-	c.logger.Debug("Skipping API key removal from policy engine (requires API config metadata)",
-		slog.String("api_id", apiID),
-	)
-
-	// Check and clean up stale policy configuration
-	c.removePolicyConfiguration(apiID, correlationID, true)
-
-	// Update xDS snapshot to remove any stale routes
-	c.updateXDSSnapshotAsync(apiID, correlationID, true, false)
 
 	c.logger.Info("Successfully processed stale resource cleanup",
 		slog.String("api_id", apiID),
@@ -1275,62 +1518,73 @@ func (c *Client) performFullAPIDeletion(apiID string, apiConfig *models.StoredCo
 		}
 	}
 
-	// 3. Remove API keys from in-memory ConfigStore
-	if err := c.store.RemoveAPIKeysByAPI(apiID); err != nil {
-		c.logger.Warn("Failed to remove API keys from ConfigStore",
-			slog.String("api_id", apiID),
-			slog.Any("error", err),
-		)
+	if c.eventHub != nil {
+		// Event-driven mode: publish event; EventListener handles store/xDS/policy cleanup
+		evt := eventhub.Event{
+			EventType: eventhub.EventTypeAPI,
+			Action:    "DELETE",
+			EntityID:  apiID,
+			EventID:   correlationID,
+		}
+		if err := c.eventHub.PublishEvent(c.gatewayID, evt); err != nil {
+			c.logger.Error("Failed to publish API deletion event", slog.Any("error", err))
+		}
 	} else {
-		c.logger.Info("Successfully removed API keys from ConfigStore",
-			slog.String("api_id", apiID),
-		)
-	}
+		// 3. Remove API keys from in-memory ConfigStore
+		if err := c.store.RemoveAPIKeysByAPI(apiID); err != nil {
+			c.logger.Warn("Failed to remove API keys from ConfigStore",
+				slog.String("api_id", apiID),
+				slog.Any("error", err),
+			)
+		} else {
+			c.logger.Info("Successfully removed API keys from ConfigStore",
+				slog.String("api_id", apiID),
+			)
+		}
 
-	// 4. Remove API keys from policy engine via xDS (if we have the config)
-	if apiConfig != nil && c.apiKeyXDSManager != nil {
-		if restCfg, ok := apiConfig.Configuration.(api.RestAPI); ok {
-			apiName := restCfg.Spec.DisplayName
-			apiVersion := restCfg.Spec.Version
+		// 4. Remove API keys from policy engine via xDS (if we have the config)
+		if apiConfig != nil && c.apiKeyXDSManager != nil {
+			if restCfg, ok := apiConfig.Configuration.(api.RestAPI); ok {
+				apiName := restCfg.Spec.DisplayName
+				apiVersion := restCfg.Spec.Version
 
-			// Use apiKeyXDSManager directly to remove API keys from policy engine
-			if err := c.apiKeyXDSManager.RemoveAPIKeysByAPI(apiID, apiName, apiVersion, correlationID); err != nil {
-				c.logger.Warn("Failed to remove API keys from policy engine",
-					slog.String("api_id", apiID),
-					slog.String("api_name", apiName),
-					slog.String("api_version", apiVersion),
-					slog.String("correlation_id", correlationID),
-					slog.Any("error", err),
-				)
-			} else {
-				c.logger.Info("Successfully removed API keys from policy engine",
-					slog.String("api_id", apiID),
-					slog.String("api_name", apiName),
-					slog.String("api_version", apiVersion),
-					slog.String("correlation_id", correlationID),
-				)
+				if err := c.apiKeyXDSManager.RemoveAPIKeysByAPI(apiID, apiName, apiVersion, correlationID); err != nil {
+					c.logger.Warn("Failed to remove API keys from policy engine",
+						slog.String("api_id", apiID),
+						slog.String("api_name", apiName),
+						slog.String("api_version", apiVersion),
+						slog.String("correlation_id", correlationID),
+						slog.Any("error", err),
+					)
+				} else {
+					c.logger.Info("Successfully removed API keys from policy engine",
+						slog.String("api_id", apiID),
+						slog.String("api_name", apiName),
+						slog.String("api_version", apiVersion),
+						slog.String("correlation_id", correlationID),
+					)
+				}
 			}
 		}
+
+		// 5. Delete from in-memory store
+		if err := c.store.Delete(apiID); err != nil {
+			c.logger.Error("Failed to delete API configuration from memory store",
+				slog.String("api_id", apiID),
+				slog.Any("error", err),
+			)
+		} else {
+			c.logger.Info("Successfully deleted API configuration from memory store",
+				slog.String("api_id", apiID),
+			)
+		}
+
+		// 6. Update xDS snapshot asynchronously (API will be removed from routes)
+		c.updateXDSSnapshotAsync(apiID, correlationID, false, false)
+
+		// 7. Remove derived policy configuration (after all other operations)
+		c.removePolicyConfiguration(apiID, correlationID, false)
 	}
-
-	// 5. Delete from in-memory store
-	if err := c.store.Delete(apiID); err != nil {
-		c.logger.Error("Failed to delete API configuration from memory store",
-			slog.String("api_id", apiID),
-			slog.Any("error", err),
-		)
-		// Continue even if in-memory deletion fails
-	} else {
-		c.logger.Info("Successfully deleted API configuration from memory store",
-			slog.String("api_id", apiID),
-		)
-	}
-
-	// 6. Update xDS snapshot asynchronously (API will be removed from routes)
-	c.updateXDSSnapshotAsync(apiID, correlationID, false, false)
-
-	// 7. Remove derived policy configuration (after all other operations)
-	c.removePolicyConfiguration(apiID, correlationID, false)
 
 	c.logger.Info("Successfully processed API deletion event",
 		slog.String("api_id", apiID),
@@ -1372,7 +1626,6 @@ func (c *Client) handleAPIDeletedEvent(event map[string]interface{}) {
 
 	c.logger.Info("Processing API deletion",
 		slog.String("api_id", apiID),
-		slog.String("vhost", deletedEvent.Payload.VHost),
 		slog.String("correlation_id", deletedEvent.CorrelationID),
 	)
 
@@ -1431,9 +1684,7 @@ func (c *Client) handleLLMProxyDeployedEvent(event map[string]interface{}) {
 
 	c.logger.Info("Processing LLM proxy deployment",
 		slog.String("proxy_id", proxyID),
-		slog.String("environment", deployedEvent.Payload.Environment),
 		slog.String("deployment_id", deployedEvent.Payload.DeploymentID),
-		slog.String("vhost", deployedEvent.Payload.VHost),
 		slog.String("correlation_id", deployedEvent.CorrelationID),
 	)
 
@@ -1444,6 +1695,8 @@ func (c *Client) handleLLMProxyDeployedEvent(event map[string]interface{}) {
 			slog.String("proxy_id", proxyID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "llmproxy", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
@@ -1454,6 +1707,8 @@ func (c *Client) handleLLMProxyDeployedEvent(event map[string]interface{}) {
 			slog.String("proxy_id", proxyID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "llmproxy", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
@@ -1462,6 +1717,8 @@ func (c *Client) handleLLMProxyDeployedEvent(event map[string]interface{}) {
 			slog.String("proxy_id", proxyID),
 			slog.String("correlation_id", deployedEvent.CorrelationID),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "llmproxy", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
@@ -1472,14 +1729,20 @@ func (c *Client) handleLLMProxyDeployedEvent(event map[string]interface{}) {
 			slog.String("proxy_id", proxyID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "llmproxy", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
 	// Update policy engine xDS snapshot (best-effort)
 	if err := c.updatePolicyForDeployment(proxyID, deployedEvent.CorrelationID, result); err != nil {
-		// Error already logged in updatePolicyForDeployment
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "llmproxy", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
+
+	c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "llmproxy", "deploy", "success",
+		deployedEvent.Payload.PerformedAt, "")
 
 	c.logger.Info("Successfully processed LLM proxy deployment event",
 		slog.String("proxy_id", proxyID),
@@ -1520,9 +1783,7 @@ func (c *Client) handleLLMProviderDeployedEvent(event map[string]interface{}) {
 
 	c.logger.Info("Processing LLM provider deployment",
 		slog.String("provider_id", providerID),
-		slog.String("environment", deployedEvent.Payload.Environment),
 		slog.String("deployment_id", deployedEvent.Payload.DeploymentID),
-		slog.String("vhost", deployedEvent.Payload.VHost),
 		slog.String("correlation_id", deployedEvent.CorrelationID),
 	)
 
@@ -1533,6 +1794,8 @@ func (c *Client) handleLLMProviderDeployedEvent(event map[string]interface{}) {
 			slog.String("provider_id", providerID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, providerID, "llmprovider", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
@@ -1543,6 +1806,8 @@ func (c *Client) handleLLMProviderDeployedEvent(event map[string]interface{}) {
 			slog.String("provider_id", providerID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, providerID, "llmprovider", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
@@ -1551,6 +1816,8 @@ func (c *Client) handleLLMProviderDeployedEvent(event map[string]interface{}) {
 			slog.String("provider_id", providerID),
 			slog.String("correlation_id", deployedEvent.CorrelationID),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, providerID, "llmprovider", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
@@ -1561,14 +1828,20 @@ func (c *Client) handleLLMProviderDeployedEvent(event map[string]interface{}) {
 			slog.String("provider_id", providerID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, providerID, "llmprovider", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
 	// Update policy engine xDS snapshot (best-effort)
 	if err := c.updatePolicyForDeployment(providerID, deployedEvent.CorrelationID, result); err != nil {
-		// Error already logged in updatePolicyForDeployment
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, providerID, "llmprovider", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
+
+	c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, providerID, "llmprovider", "deploy", "success",
+		deployedEvent.Payload.PerformedAt, "")
 
 	c.logger.Info("Successfully processed LLM provider deployment event",
 		slog.String("provider_id", providerID),
@@ -1612,6 +1885,8 @@ func (c *Client) handleLLMProviderUndeployedEvent(event map[string]interface{}) 
 			slog.String("provider_id", providerID),
 			slog.String("correlation_id", undeployedEvent.CorrelationID),
 		)
+		c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, providerID, "llmprovider", "undeploy", "failed",
+			undeployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
@@ -1621,8 +1896,13 @@ func (c *Client) handleLLMProviderUndeployedEvent(event map[string]interface{}) 
 			slog.String("provider_id", providerID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, providerID, "llmprovider", "undeploy", "failed",
+			undeployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
+
+	c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, providerID, "llmprovider", "undeploy", "success",
+		undeployedEvent.Payload.PerformedAt, "")
 
 	c.logger.Info("Successfully processed LLM provider undeployment event",
 		slog.String("provider_id", providerID),
@@ -1666,6 +1946,8 @@ func (c *Client) handleLLMProxyUndeployedEvent(event map[string]interface{}) {
 			slog.String("proxy_id", proxyID),
 			slog.String("correlation_id", undeployedEvent.CorrelationID),
 		)
+		c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, proxyID, "llmproxy", "undeploy", "failed",
+			undeployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
@@ -1675,8 +1957,13 @@ func (c *Client) handleLLMProxyUndeployedEvent(event map[string]interface{}) {
 			slog.String("proxy_id", proxyID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, proxyID, "llmproxy", "undeploy", "failed",
+			undeployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
+
+	c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, proxyID, "llmproxy", "undeploy", "success",
+		undeployedEvent.Payload.PerformedAt, "")
 
 	c.logger.Info("Successfully processed LLM proxy undeployment event",
 		slog.String("proxy_id", proxyID),
@@ -1716,9 +2003,7 @@ func (c *Client) handleMCPProxyDeploymentEvent(event map[string]any) {
 
 	c.logger.Debug("Processing MCP proxy deployment",
 		slog.String("proxy_id", proxyID),
-		slog.String("environment", deployedEvent.Payload.Environment),
 		slog.String("deployment_id", deployedEvent.Payload.DeploymentID),
-		slog.String("vhost", deployedEvent.Payload.VHost),
 		slog.String("correlation_id", deployedEvent.CorrelationID),
 	)
 
@@ -1729,6 +2014,8 @@ func (c *Client) handleMCPProxyDeploymentEvent(event map[string]any) {
 			slog.String("proxy_id", proxyID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "mcpproxy", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
@@ -1739,6 +2026,8 @@ func (c *Client) handleMCPProxyDeploymentEvent(event map[string]any) {
 			slog.String("proxy_id", proxyID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "mcpproxy", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
@@ -1747,6 +2036,8 @@ func (c *Client) handleMCPProxyDeploymentEvent(event map[string]any) {
 			slog.String("proxy_id", proxyID),
 			slog.String("correlation_id", deployedEvent.CorrelationID),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "mcpproxy", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
@@ -1757,14 +2048,21 @@ func (c *Client) handleMCPProxyDeploymentEvent(event map[string]any) {
 			slog.String("proxy_id", proxyID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "mcpproxy", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
 	// Update policy engine xDS snapshot (best-effort)
 	if err := c.updatePolicyForDeployment(proxyID, deployedEvent.CorrelationID, result); err != nil {
 		// Error already logged in updatePolicyForDeployment
+		c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "mcpproxy", "deploy", "failed",
+			deployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
+
+	c.sendDeploymentAck(deployedEvent.Payload.DeploymentID, proxyID, "mcpproxy", "deploy", "success",
+		deployedEvent.Payload.PerformedAt, "")
 
 	c.logger.Info("Successfully processed MCP proxy deployment event",
 		slog.String("proxy_id", proxyID),
@@ -1810,6 +2108,8 @@ func (c *Client) handleMCPProxyUndeploymentEvent(event map[string]any) {
 				slog.String("proxy_id", proxyID),
 			)
 			// Not an error - the MCP proxy might already be undeployed or deleted
+			c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, proxyID, "mcpproxy", "undeploy", "success",
+				undeployedEvent.Payload.PerformedAt, "")
 			return
 		}
 		// Real storage error - log and abort
@@ -1818,13 +2118,14 @@ func (c *Client) handleMCPProxyUndeploymentEvent(event map[string]any) {
 			slog.String("correlation_id", undeployedEvent.CorrelationID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, proxyID, "mcpproxy", "undeploy", "failed",
+			undeployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
 	// Set status to undeployed (preserve config, keys, and policies)
 	mcpConfig.Status = models.StatusUndeployed
 	mcpConfig.UpdatedAt = time.Now()
-	// Keep DeployedVersion as-is - it tracks when it was last deployed
 
 	// Update database (only if persistent mode)
 	if c.db != nil {
@@ -1833,6 +2134,8 @@ func (c *Client) handleMCPProxyUndeploymentEvent(event map[string]any) {
 				slog.String("proxy_id", proxyID),
 				slog.Any("error", err),
 			)
+			c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, proxyID, "mcpproxy", "undeploy", "failed",
+				undeployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 			return
 		}
 	}
@@ -1843,11 +2146,16 @@ func (c *Client) handleMCPProxyUndeploymentEvent(event map[string]any) {
 			slog.String("proxy_id", proxyID),
 			slog.Any("error", err),
 		)
+		c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, proxyID, "mcpproxy", "undeploy", "failed",
+			undeployedEvent.Payload.PerformedAt, "GATEWAY_PROCESSING_ERROR")
 		return
 	}
 
 	// Update xDS snapshot asynchronously (undeployed APIs will be filtered out)
 	c.updateXDSSnapshotAsync(proxyID, undeployedEvent.CorrelationID, false, true)
+
+	c.sendDeploymentAck(undeployedEvent.Payload.DeploymentID, proxyID, "mcpproxy", "undeploy", "success",
+		undeployedEvent.Payload.PerformedAt, "")
 
 	c.logger.Info("Successfully processed MCP proxy undeployment event",
 		slog.String("proxy_id", proxyID),
@@ -1963,8 +2271,8 @@ func (c *Client) handleAPIKeyCreatedEvent(event map[string]interface{}) {
 		)
 		return
 	}
-	if keyCreatedEvent.Payload.ApiKey == "" {
-		baseLogger.Error("API key created event missing required api_key",
+	if keyCreatedEvent.Payload.ApiKeyHashes == "" {
+		baseLogger.Error("API key created event missing required api_key_hashes",
 			slog.Any("correlation_id", event["correlationId"]),
 		)
 		return
@@ -1975,18 +2283,6 @@ func (c *Client) handleAPIKeyCreatedEvent(event map[string]interface{}) {
 		// Validate the name format
 		if err := utils.ValidateAPIKeyName(keyCreatedEvent.Payload.Name); err != nil {
 			baseLogger.Error("API key created event has invalid name",
-				slog.Any("correlation_id", event["correlationId"]),
-				slog.Any("error", err),
-			)
-			return
-		}
-	}
-
-	// Validate DisplayName - optional field (pointer may be nil)
-	if keyCreatedEvent.Payload.DisplayName != nil && strings.TrimSpace(*keyCreatedEvent.Payload.DisplayName) != "" {
-		// Validate the display name format
-		if err := utils.ValidateDisplayName(*keyCreatedEvent.Payload.DisplayName); err != nil {
-			baseLogger.Error("API key created event has invalid display_name",
 				slog.Any("correlation_id", event["correlationId"]),
 				slog.Any("error", err),
 			)
@@ -2006,11 +2302,15 @@ func (c *Client) handleAPIKeyCreatedEvent(event map[string]interface{}) {
 	var duration *int
 	now := time.Now()
 
+	var keyUUID *string
+	if payload.UUID != "" {
+		keyUUID = &payload.UUID
+	}
 	apiKeyCreationRequest := api.APIKeyCreationRequest{
-		ApiKey:        &payload.ApiKey,
-		DisplayName:   payload.DisplayName,
+		MaskedApiKey:  &payload.MaskedApiKey,
 		Name:          &payload.Name,
 		ExternalRefId: payload.ExternalRefId,
+		Issuer:        payload.Issuer,
 	}
 	if payload.ExpiresAt != nil {
 		// payload.ExpiresAt is likely a *string (RFC3339). Attempt to parse it to time.Time
@@ -2060,6 +2360,8 @@ func (c *Client) handleAPIKeyCreatedEvent(event map[string]interface{}) {
 		payload.ApiId,
 		keyCreatedEvent.UserId,
 		&apiKeyCreationRequest,
+		keyUUID,
+		&payload.ApiKeyHashes,
 		keyCreatedEvent.CorrelationID,
 		logger,
 	)
@@ -2183,34 +2485,14 @@ func (c *Client) handleAPIKeyUpdatedEvent(event map[string]interface{}) {
 		)
 		return
 	}
-	if payload.ApiKey == "" {
-		baseLogger.Error("API key updated event missing required api_key",
+	if payload.ApiKeyHashes == "" {
+		baseLogger.Error("API key updated event missing required api_key_hashes",
 			slog.Any("correlation_id", event["correlationId"]),
 			slog.String("api_id", payload.ApiId),
 			slog.String("key_name", payload.KeyName),
 		)
 		return
 	}
-	if payload.DisplayName == "" {
-		baseLogger.Error("API key updated event missing required display_name",
-			slog.Any("correlation_id", event["correlationId"]),
-			slog.String("api_id", payload.ApiId),
-			slog.String("key_name", payload.KeyName),
-		)
-		return
-	}
-
-	// Validate the display name format
-	if err := utils.ValidateDisplayName(payload.DisplayName); err != nil {
-		baseLogger.Error("API key updated event has invalid display_name",
-			slog.Any("correlation_id", event["correlationId"]),
-			slog.String("api_id", payload.ApiId),
-			slog.String("key_name", payload.KeyName),
-			slog.Any("error", err),
-		)
-		return
-	}
-
 	logger := baseLogger.With(
 		slog.String("correlation_id", evt.CorrelationID),
 		slog.String("user_id", evt.UserId),
@@ -2223,10 +2505,10 @@ func (c *Client) handleAPIKeyUpdatedEvent(event map[string]interface{}) {
 	now := time.Now()
 
 	apiKeyCreationRequest := api.APIKeyCreationRequest{
-		ApiKey:        &payload.ApiKey,
-		DisplayName:   &payload.DisplayName,
-		ExternalRefId: &payload.ExternalRefId,
+		MaskedApiKey:  &payload.MaskedApiKey,
+		ExternalRefId: payload.ExternalRefId,
 		Name:          &payload.KeyName,
+		Issuer:        payload.Issuer,
 	}
 	if payload.ExpiresAt != nil {
 		// payload.ExpiresAt is likely a *string (RFC3339). Attempt to parse it to time.Time
@@ -2276,6 +2558,7 @@ func (c *Client) handleAPIKeyUpdatedEvent(event map[string]interface{}) {
 		payload.ApiId,
 		payload.KeyName,
 		&apiKeyCreationRequest,
+		&payload.ApiKeyHashes,
 		evt.UserId,
 		evt.CorrelationID,
 		logger,
@@ -2285,6 +2568,119 @@ func (c *Client) handleAPIKeyUpdatedEvent(event map[string]interface{}) {
 		return
 	}
 	logger.Info("Successfully processed API key updated event")
+}
+
+// handleApplicationUpdatedEvent handles application mapping update events from platform-api.
+func (c *Client) handleApplicationUpdatedEvent(event map[string]interface{}) {
+	baseLogger := c.logger
+	if baseLogger == nil {
+		baseLogger = slog.Default()
+	}
+
+	if c.db == nil {
+		baseLogger.Warn("Storage not configured; skipping application.updated persistence")
+		return
+	}
+
+	eventBytes, err := json.Marshal(event)
+	if err != nil {
+		baseLogger.Error("Failed to marshal application updated event for parsing",
+			slog.Any("correlation_id", event["correlationId"]),
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	var evt ApplicationUpdatedEvent
+	if err := json.Unmarshal(eventBytes, &evt); err != nil {
+		baseLogger.Error("Failed to parse application updated event",
+			slog.Any("correlation_id", event["correlationId"]),
+			slog.Any("error", err),
+		)
+		return
+	}
+
+	if evt.Payload.ApplicationId == "" {
+		baseLogger.Error("Application updated event missing required application_id",
+			slog.Any("correlation_id", event["correlationId"]),
+		)
+		return
+	}
+
+	if evt.Payload.ApplicationUuid == "" {
+		baseLogger.Error("Application updated event missing required application_uuid",
+			slog.Any("correlation_id", event["correlationId"]),
+		)
+		return
+	}
+
+	if evt.Payload.ApplicationName == "" {
+		baseLogger.Error("Application updated event missing required application_name",
+			slog.Any("correlation_id", event["correlationId"]),
+		)
+		return
+	}
+
+	if evt.Payload.ApplicationType == "" {
+		baseLogger.Error("Application updated event missing required application_type",
+			slog.Any("correlation_id", event["correlationId"]),
+		)
+		return
+	}
+
+	logger := baseLogger.With(
+		slog.String("correlation_id", evt.CorrelationID),
+		slog.String("application_id", evt.Payload.ApplicationId),
+		slog.String("application_uuid", evt.Payload.ApplicationUuid),
+		slog.String("application_name", evt.Payload.ApplicationName),
+		slog.String("application_type", evt.Payload.ApplicationType),
+	)
+
+	resolvedMappings := make([]*models.ApplicationAPIKeyMapping, 0, len(evt.Payload.Mappings))
+
+	for _, mapping := range evt.Payload.Mappings {
+		if mapping.ApiKeyUuid == "" {
+			logger.Warn("Skipping invalid application mapping entry in event",
+				slog.String("api_key_uuid", mapping.ApiKeyUuid),
+			)
+			continue
+		}
+
+		apiKey, err := c.db.GetAPIKeyByUUID(mapping.ApiKeyUuid)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				logger.Warn("Skipping unresolved API key for application mapping",
+					slog.String("api_key_uuid", mapping.ApiKeyUuid),
+				)
+				continue
+			}
+
+			logger.Error("Failed to resolve API key for application mapping",
+				slog.String("api_key_uuid", mapping.ApiKeyUuid),
+				slog.Any("error", err),
+			)
+			return
+		}
+
+		resolvedMappings = append(resolvedMappings, &models.ApplicationAPIKeyMapping{
+			ApplicationUUID: evt.Payload.ApplicationUuid,
+			APIKeyID:        apiKey.UUID,
+		})
+	}
+
+	application := &models.StoredApplication{
+		ApplicationID:   evt.Payload.ApplicationId,
+		ApplicationUUID: evt.Payload.ApplicationUuid,
+		ApplicationName: evt.Payload.ApplicationName,
+		ApplicationType: evt.Payload.ApplicationType,
+	}
+
+	if err := c.db.ReplaceApplicationAPIKeyMappings(application, resolvedMappings); err != nil {
+		logger.Error("Failed to persist application key mappings", slog.Any("error", err))
+		return
+	}
+
+	logger.Info("Successfully processed application updated event", slog.Int("mapping_count", len(resolvedMappings)))
 }
 
 // calculateNextRetryDelay calculates the next retry delay with exponential backoff and jitter
@@ -2678,16 +3074,117 @@ func (c *Client) PushAPIDeployment(apiID string, apiConfig *models.StoredConfig,
 	return c.apiUtilsService.PushAPIDeployment(apiID, apiConfig, deploymentID)
 }
 
-// getWebSocketURL constructs the base WebSocket URL from configuration
+// getWebSocketURL constructs the base WebSocket URL from configuration (cloud default; on-prem may override via well-known).
 func (c *Client) getWebSocketURL() string {
-	return fmt.Sprintf("wss://%s/api/internal/v1/ws",
-		c.config.Host,
-	)
+	return fmt.Sprintf("wss://%s/api/internal/v1/ws", c.config.Host)
 }
 
-// getRestAPIBaseURL constructs the base REST API URL from configuration
+// getWebSocketConnectURL returns the full WebSocket URL for gateway connect (fallback when well-known is unavailable).
+func (c *Client) getWebSocketConnectURL() string {
+	return c.getWebSocketURL() + "/gateways/connect"
+}
+
+// getRestAPIBaseURL constructs the base REST API URL from configuration.
+// Uses the discovered gateway path if available, otherwise falls back to default.
 func (c *Client) getRestAPIBaseURL() string {
-	return fmt.Sprintf("https://%s/api/internal/v1",
-		c.config.Host,
+	c.state.mu.RLock()
+	path := c.gatewayPath
+	c.state.mu.RUnlock()
+
+	if path != "" {
+		return fmt.Sprintf("https://%s%s", c.config.Host, path)
+	}
+	return fmt.Sprintf("https://%s/api/internal/v1", c.config.Host)
+}
+
+// pushGatewayManifest POSTs the gateway's installed policy manifest to the control plane.
+func (c *Client) pushGatewayManifest(gatewayID string, policies []models.PolicyDefinition) error {
+	url := c.getRestAPIBaseURL() + "/gateways/" + gatewayID + "/manifest"
+
+	body := struct {
+		Policies []models.PolicyDefinition `json:"policies"`
+	}{Policies: policies}
+
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("failed to marshal manifest payload: %w", err)
+	}
+
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: c.config.InsecureSkipVerify,
+			},
+		},
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create manifest request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("api-key", c.config.Token)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send gateway manifest: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("gateway manifest push failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+	return nil
+}
+
+// pushGatewayManifestOnConnect collects all loaded policy definitions and POSTs
+// them to the control plane immediately after the connection is established.
+func (c *Client) pushGatewayManifestOnConnect(gatewayID string) {
+	c.logger.Info("Pushing gateway manifest on connect",
+		slog.String("gateway_id", gatewayID),
+	)
+
+	policies := make([]models.PolicyDefinition, 0, len(c.policyDefinitions))
+	for _, def := range c.policyDefinitions {
+		policies = append(policies, def)
+	}
+
+	const maxRetries = 3
+	var pushErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		pushErr = c.pushGatewayManifest(gatewayID, policies)
+		if pushErr == nil {
+			break
+		}
+		c.logger.Warn("Failed to push gateway manifest, retrying",
+			slog.String("gateway_id", gatewayID),
+			slog.Int("attempt", attempt),
+			slog.Int("max_retries", maxRetries),
+			slog.Any("error", pushErr),
+		)
+		if attempt < maxRetries {
+			select {
+			case <-time.After(time.Duration(attempt) * 2 * time.Second):
+			case <-c.ctx.Done():
+				c.logger.Warn("Context cancelled, aborting gateway manifest push retries",
+					slog.String("gateway_id", gatewayID))
+				return
+			case <-time.After(time.Duration(attempt) * 2 * time.Second):
+			}
+		}
+	}
+	if pushErr != nil {
+		c.logger.Error("Failed to push gateway manifest after all retries",
+			slog.String("gateway_id", gatewayID),
+			slog.Any("error", pushErr),
+		)
+		return
+	}
+
+	c.logger.Info("Successfully pushed gateway manifest to control plane",
+		slog.String("gateway_id", gatewayID),
+		slog.Int("policy_count", len(policies)),
 	)
 }

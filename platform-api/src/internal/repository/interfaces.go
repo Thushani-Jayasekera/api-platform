@@ -55,10 +55,31 @@ type ArtifactRepository interface {
 	CountByKindAndOrg(kind, orgUUID string) (int, error)
 }
 
+// ApplicationRepository defines the interface for application data access
+type ApplicationRepository interface {
+	CreateApplication(app *model.Application) error
+	GetApplicationByUUID(appID string) (*model.Application, error)
+	GetApplicationByIDOrHandle(appIDOrHandle, orgID string) (*model.Application, error)
+	GetArtifactByUUID(artifactUUID, orgID string) (*model.Artifact, error)
+	GetApplicationsByProjectID(projectID, orgID string) ([]*model.Application, error)
+	GetApplicationsByOrganizationID(orgID string) ([]*model.Application, error)
+	GetApplicationByNameInProject(name, projectID, orgID string) (*model.Application, error)
+	CheckApplicationHandleExists(handle, orgID string) (bool, error)
+	UpdateApplication(app *model.Application) error
+	DeleteApplication(appID, orgID string) error
+
+	GetAPIKeyByNameAndArtifactHandle(keyName, artifactHandle, orgID string) (*model.ApplicationAPIKey, error)
+	GetDeployedGatewayIDsByArtifactUUID(artifactUUID, orgID string) ([]string, error)
+	ListMappedAPIKeys(applicationUUID string) ([]*model.ApplicationAPIKey, error)
+	AddApplicationAPIKeys(applicationUUID string, apiKeyIDs []string) error
+	RemoveApplicationAPIKey(applicationUUID, apiKeyID string) error
+}
+
 // APIRepository defines the interface for API data operations
 type APIRepository interface {
 	CreateAPI(api *model.API) error
 	GetAPIByUUID(apiUUID, orgUUID string) (*model.API, error)
+	GetAPIsByUUIDs(uuids []string, orgUUID string) (map[string]string, error)
 	GetAPIMetadataByHandle(handle, orgUUID string) (*model.APIMetadata, error)
 	GetAPIsByProjectUUID(projectUUID, orgUUID string) ([]*model.API, error)
 	GetAPIsByOrganizationUUID(orgUUID string, projectUUID string) ([]*model.API, error)
@@ -92,8 +113,17 @@ type DeploymentRepository interface {
 
 	// Deployment status methods (mutable state tracking)
 	SetCurrent(artifactUUID, orgUUID, gatewayID, deploymentID string, status model.DeploymentStatus) (updatedAt time.Time, err error)
+	SetCurrentWithDetails(artifactUUID, orgUUID, gatewayID, deploymentID string, status model.DeploymentStatus, statusDesired string, performedAt *time.Time, statusReason string) (updatedAt time.Time, err error)
 	GetStatus(artifactUUID, orgUUID, gatewayID string) (deploymentID string, status model.DeploymentStatus, updatedAt *time.Time, err error)
+	GetStatusFull(artifactUUID, orgUUID, gatewayID string) (deploymentID string, status model.DeploymentStatus, performedAt *time.Time, statusReason string, err error)
+	UpdateStatusWithPerformedAtGuard(artifactUUID, orgUUID, gatewayID string, newStatus model.DeploymentStatus, statusReason string, performedAt time.Time, requireCurrentStatus []model.DeploymentStatus) (rowsAffected int64, err error)
+	GetStaleTransitionalStatuses(timeout time.Duration) ([]StaleDeploymentStatus, error)
 	DeleteStatus(artifactUUID, orgUUID, gatewayID string) error
+	GetDeployedGatewayIDs(artifactUUID, orgUUID string) ([]string, error)
+
+	// Gateway deployment methods
+	GetAllDeploymentsByGateway(gatewayID, orgUUID string, since *time.Time) ([]*model.DeploymentInfo, error)
+	GetDeploymentContentByIDs(deploymentIDs []string, orgUUID string, gatewayUUID string) (map[string]*model.DeploymentContent, error)
 }
 
 // GatewayRepository defines the interface for gateway data access
@@ -120,6 +150,11 @@ type GatewayRepository interface {
 	GetTokenByUUID(tokenId string) (*model.GatewayToken, error)
 	RevokeToken(tokenId string) error
 	CountActiveTokens(gatewayId string) (int, error)
+
+	// Manifest operations
+	UpdateGatewayManifest(gatewayID string, manifest []byte) error
+	GetGatewayManifest(gatewayID string) ([]byte, error)
+
 }
 
 // DevPortalRepository interface for DevPortal-related database operations
@@ -142,6 +177,7 @@ type DevPortalRepository interface {
 type SubscriptionPlanRepository interface {
 	Create(plan *model.SubscriptionPlan) error
 	GetByID(planID, orgUUID string) (*model.SubscriptionPlan, error)
+	GetByIDs(planIDs []string, orgUUID string) (map[string]string, error)
 	GetByNameAndOrg(planName, orgUUID string) (*model.SubscriptionPlan, error)
 	ListByOrganization(orgUUID string, limit, offset int) ([]*model.SubscriptionPlan, error)
 	Update(plan *model.SubscriptionPlan) error
@@ -196,6 +232,17 @@ type LLMProviderRepository interface {
 	Update(p *model.LLMProvider) error
 	Delete(providerID, orgUUID string) error
 	Exists(providerID, orgUUID string) (bool, error)
+}
+
+// APIKeyRepository defines the interface for API key persistence
+type APIKeyRepository interface {
+	Create(key *model.APIKey) error
+	Update(key *model.APIKey) error
+	Revoke(artifactUUID, name string) error
+	GetByArtifactAndName(artifactUUID, name string) (*model.APIKey, error)
+	ListByArtifact(artifactUUID string) ([]*model.APIKey, error)
+	Delete(artifactUUID, name string) error
+	ListAPIKeysByUser(orgUUID, username string, kinds []string) ([]*model.UserAPIKey, error)
 }
 
 // LLMProxyRepository defines the interface for LLM proxy persistence
