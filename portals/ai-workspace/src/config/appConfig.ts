@@ -88,7 +88,6 @@ export interface OrgDetails {
 
 export interface FileBasedAuthConfig {
   enabled: boolean;
-  org: OrgDetails;
   users: FileBasedUser[];
   /**
    * HMAC-SHA256 secret used to sign locally-issued JWTs. Must match
@@ -106,10 +105,16 @@ export interface FileBasedAuthConfig {
 export interface AuthConfig {
   /**
    * When false the app skips all login UI and auto-injects a JWT with the
-   * organization claim set to fileBasedAuth.orgId. Use this when you want to
-   * test the app without any authentication friction.
+   * organization claim set to org.id. Use this when you want to test the app
+   * without any authentication friction.
    */
   enabled: boolean;
+  /**
+   * The org to use when there is no IDP providing org context — i.e. in
+   * no-auth mode (auth.enabled=false) and file-based auth mode.
+   * Ignored when auth.idp.enabled=true (org comes from the IDP token instead).
+   */
+  org: OrgDetails;
   idp: IdpConfig;
   fileBasedAuth: FileBasedAuthConfig;
 }
@@ -131,6 +136,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   devMode: false,
   auth: {
     enabled: false,
+    org: { id: '', name: '', handle: '' },
     idp: {
       enabled: false,
       authority: '',
@@ -157,7 +163,6 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     },
     fileBasedAuth: {
       enabled: false,
-      org: { id: '', name: '', handle: '' },
       users: [],
       tokenExchange: { enabled: false },
     },
@@ -185,9 +190,9 @@ function getEnv(key: string): string {
  *   VITE_IDP_ENABLED           → auth.idp.enabled
  *   VITE_FILE_AUTH_ENABLED     → auth.fileBasedAuth.enabled
  *   VITE_FILE_AUTH_JWT_SECRET  → auth.fileBasedAuth.jwtSecret
- *   VITE_DEV_ORG_ID            → auth.fileBasedAuth.org.id
- *   VITE_DEV_ORG_NAME          → auth.fileBasedAuth.org.name
- *   VITE_DEV_ORG_HANDLE        → auth.fileBasedAuth.org.handle
+ *   VITE_DEV_ORG_ID            → auth.org.id
+ *   VITE_DEV_ORG_NAME          → auth.org.name
+ *   VITE_DEV_ORG_HANDLE        → auth.org.handle
  *   VITE_OIDC_AUTHORITY        → auth.idp.authority
  *   VITE_OIDC_CLIENT_ID        → auth.idp.clientId
  *   VITE_OIDC_REDIRECT_URI     → auth.idp.redirectUri
@@ -208,6 +213,12 @@ function applyEnvOverrides(config: AppConfig): AppConfig {
     auth: {
       ...config.auth,
       enabled: override('VITE_AUTH_ENABLED', config.auth.enabled, parseBool),
+      org: {
+        id:     override('VITE_DEV_ORG_ID',     config.auth.org.id),
+        name:   override('VITE_DEV_ORG_NAME',   config.auth.org.name),
+        handle: override('VITE_DEV_ORG_HANDLE', config.auth.org.handle),
+        region: config.auth.org.region,
+      },
       idp: {
         ...config.auth.idp,
         enabled:                override('VITE_IDP_ENABLED',                    config.auth.idp.enabled, parseBool),
@@ -221,11 +232,6 @@ function applyEnvOverrides(config: AppConfig): AppConfig {
         ...config.auth.fileBasedAuth,
         enabled:   override('VITE_FILE_AUTH_ENABLED',    config.auth.fileBasedAuth.enabled, parseBool),
         jwtSecret: override('VITE_FILE_AUTH_JWT_SECRET', config.auth.fileBasedAuth.jwtSecret) || config.auth.fileBasedAuth.jwtSecret,
-        org: {
-          id:     override('VITE_DEV_ORG_ID',     config.auth.fileBasedAuth.org.id),
-          name:   override('VITE_DEV_ORG_NAME',   config.auth.fileBasedAuth.org.name),
-          handle: override('VITE_DEV_ORG_HANDLE', config.auth.fileBasedAuth.org.handle),
-        },
       },
     },
   };

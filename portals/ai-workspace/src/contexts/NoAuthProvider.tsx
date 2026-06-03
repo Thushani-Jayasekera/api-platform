@@ -21,7 +21,7 @@ import { AppAuthContext, type AppUser } from './AppAuthContext';
 import { ROLE_SCOPES, expandScopes, checkPermission } from '../auth/permissions';
 import { buildNoAuthJwt } from '../auth/noAuthJwt';
 import { setStoredToken } from '../clients/aiWorkspaceApiClient';
-import type { FileBasedAuthConfig } from '../config/appConfig';
+import type { AuthConfig } from '../config/appConfig';
 
 /**
  * Used when auth.enabled = false in app-config.json.
@@ -34,7 +34,7 @@ export function NoAuthProvider({
   config,
   children,
 }: {
-  config: FileBasedAuthConfig;
+  config: AuthConfig;
   children: React.ReactNode;
 }) {
   const adminScopes = expandScopes(ROLE_SCOPES['admin']);
@@ -44,7 +44,7 @@ export function NoAuthProvider({
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    buildNoAuthJwt(config.org, adminScopes, config.jwtSecret).then((t) => {
+    buildNoAuthJwt(config.org, adminScopes, config.fileBasedAuth.jwtSecret).then((t) => {
       setStoredToken(t);
       setToken(t);
     });

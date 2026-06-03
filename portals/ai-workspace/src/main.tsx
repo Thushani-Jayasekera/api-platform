@@ -37,12 +37,12 @@ function buildAuthTree(config: AppConfig, children: React.ReactNode): React.Reac
 
   // auth.enabled = false → skip login entirely, auto-inject org JWT
   if (!auth.enabled) {
-    return <NoAuthProvider config={auth.fileBasedAuth}>{children}</NoAuthProvider>;
+    return <NoAuthProvider config={auth}>{children}</NoAuthProvider>;
   }
 
   // auth.enabled + fileBasedAuth → username/password login form
   if (auth.fileBasedAuth.enabled) {
-    return <MockAuthProvider config={auth.fileBasedAuth}>{children}</MockAuthProvider>;
+    return <MockAuthProvider config={auth}>{children}</MockAuthProvider>;
   }
 
   // auth.enabled + idp → full OIDC flow

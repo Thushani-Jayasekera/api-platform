@@ -77,7 +77,7 @@ import { AIWorkspaceUserProvider, useAIWorkspaceUser } from './contexts/AIWorksp
 import { setStoredToken } from './clients/aiWorkspaceApiClient';
 import { useAppAuth } from './contexts/AppAuthContext';
 import { useAppConfig } from './config/AppConfigContext';
-import { addOrgMember } from './apis/platformApis';
+import { addOrgMember, registerOrganization } from './apis/platformApis';
 import React from 'react';
 
 function extractClaimFromJwt(token: string, claim: string): string | null {
@@ -174,12 +174,33 @@ function PostSignInInit({ children }: { children: React.ReactNode }) {
           setStoredToken(token);
         }
 
+        // No-auth dev mode: skip org discovery — register the configured org if it
+        // doesn't exist yet, then navigate straight to it.
+        if (!auth.enabled) {
+          const configuredOrg = auth.org;
+          try {
+            await registerOrganization({
+              id: configuredOrg.id,
+              name: configuredOrg.name,
+              handle: configuredOrg.handle,
+              region: configuredOrg.region ?? 'us',
+            });
+          } catch (err: any) {
+            // 409 = org already exists, nothing to do
+            if (!err?.message?.includes('already exists')) throw err;
+          }
+          sessionStorage.setItem('currentOrgHandle', configuredOrg.handle);
+          setIsTokenExchanged(true);
+          navigate(`/organizations/${configuredOrg.handle}/home`, { replace: true });
+          return;
+        }
+
         // File-based auth: the only org is the one declared in the config.
         // If the logged-in user is not yet a member, add them now using their
         // token (which is valid at this point). Then navigate to that org.
         if (fileBasedAuth.enabled) {
           const orgs = await getOrganizations();
-          const configuredOrg = fileBasedAuth.org;
+          const configuredOrg = auth.org;
           if (!orgs.find((o) => o.id === configuredOrg.id)) {
             const userId = token ? extractClaimFromJwt(token, 'sub') : null;
             const role = token ? extractClaimFromJwt(token, 'role') : null;

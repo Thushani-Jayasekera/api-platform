@@ -22,7 +22,7 @@ import { ROLE_SCOPES, expandScopes, checkPermission } from '../auth/permissions'
 import { clearAuthData } from '../auth/logout';
 import { setStoredToken, clearStoredToken } from '../clients/aiWorkspaceApiClient';
 import { buildSignedJwt } from '../auth/noAuthJwt';
-import type { FileBasedAuthConfig } from '../config/appConfig';
+import type { AuthConfig } from '../config/appConfig';
 
 const MOCK_SESSION_KEY = 'mock_auth_user';
 
@@ -40,7 +40,7 @@ export function MockAuthProvider({
   config,
   children,
 }: {
-  config: FileBasedAuthConfig;
+  config: AuthConfig;
   children: React.ReactNode;
 }) {
   const [user, setUser] = useState<AppUser | null>(loadStoredUser);
@@ -50,7 +50,7 @@ export function MockAuthProvider({
 
   const login = useCallback(async (credentials?: { username: string; password: string }) => {
     if (!credentials) return;
-    const match = config.users.find(
+    const match = config.fileBasedAuth.users.find(
       (u) => u.username === credentials.username && u.password === credentials.password
     );
     if (!match) throw new Error('Invalid username or password');
@@ -75,7 +75,7 @@ export function MockAuthProvider({
       scope: scopes.join(' '),
       iat,
       exp: iat + 86400,
-    }, config.jwtSecret);
+    }, config.fileBasedAuth.jwtSecret);
     setStoredToken(mockToken);
     setMockToken(mockToken);
     sessionStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(appUser));
