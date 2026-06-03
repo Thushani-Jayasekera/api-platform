@@ -6,7 +6,7 @@
  * in compliance with the License.
  * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
@@ -23,75 +23,76 @@ import { AuthProvider } from 'react-oidc-context';
 import { AcrylicOrangeTheme, AcrylicPurpleTheme, ClassicTheme, HighContrastTheme, OxygenUIThemeProvider } from '@wso2/oxygen-ui';
 import App from './App.tsx';
 import './styles.css';
-import {
-  DISABLE_AUTH,
-  OIDC_AUTHORITY,
-  OIDC_CLIENT_ID,
-  OIDC_REDIRECT_URI,
-  OIDC_POST_LOGOUT_REDIRECT_URI,
-  OIDC_SCOPE,
-  OIDC_END_SESSION_ENDPOINT,
-} from './config.env';
+import { loadAppConfig, type AppConfig } from './config/appConfig';
+import { AppConfigContext } from './config/AppConfigContext';
 import { MockAuthProvider } from './contexts/MockAuthProvider';
+import { NoAuthProvider } from './contexts/NoAuthProvider';
 import { OIDCAppAuthProvider } from './contexts/OIDCAppAuthProvider';
 
 const container = document.getElementById('root')!;
 const root = createRoot(container);
 
-const themeConfig = (
-  <OxygenUIThemeProvider
-    themes={[
-      {
-        key: 'acrylicOrange',
-        label: 'Acrylic Orange Theme',
-        theme: AcrylicOrangeTheme,
-      },
-      {
-        key: 'acrylicPurple',
-        label: 'Acrylic Purple Theme',
-        theme: AcrylicPurpleTheme,
-      },
-      {
-        key: 'highContrast',
-        label: 'High Contrast Theme',
-        theme: HighContrastTheme,
-      },
-      { key: 'classic', label: 'Classic Theme', theme: ClassicTheme },
-    ]}
-    initialTheme="acrylicOrange"
-  >
-    {DISABLE_AUTH ? (
-      <MockAuthProvider>
-        <IntlProvider locale="en" defaultLocale="en">
-          <App />
-        </IntlProvider>
-      </MockAuthProvider>
-    ) : (
-      <AuthProvider
-        authority={OIDC_AUTHORITY}
-        client_id={OIDC_CLIENT_ID}
-        redirect_uri={OIDC_REDIRECT_URI}
-        post_logout_redirect_uri={OIDC_POST_LOGOUT_REDIRECT_URI}
-        scope={OIDC_SCOPE}
-        extraTokenParams={{ scope: OIDC_SCOPE }}
-        loadUserInfo={true}
-        metadata={OIDC_END_SESSION_ENDPOINT ? { end_session_endpoint: OIDC_END_SESSION_ENDPOINT } : undefined}
-        onSigninCallback={() => {
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }}
-      >
-        <OIDCAppAuthProvider>
-          <IntlProvider locale="en" defaultLocale="en">
-            <App />
-          </IntlProvider>
-        </OIDCAppAuthProvider>
-      </AuthProvider>
-    )}
-  </OxygenUIThemeProvider>
-);
+function buildAuthTree(config: AppConfig, children: React.ReactNode): React.ReactNode {
+  const { auth } = config;
 
-root.render(
-  <React.StrictMode>
-    {themeConfig}
-  </React.StrictMode>
-);
+  // auth.enabled = false → skip login entirely, auto-inject org JWT
+  if (!auth.enabled) {
+    return <NoAuthProvider config={auth.fileBasedAuth}>{children}</NoAuthProvider>;
+  }
+
+  // auth.enabled + fileBasedAuth → username/password login form
+  if (auth.fileBasedAuth.enabled) {
+    return <MockAuthProvider config={auth.fileBasedAuth}>{children}</MockAuthProvider>;
+  }
+
+  // auth.enabled + idp → full OIDC flow
+  const { idp } = auth;
+  return (
+    <AuthProvider
+      authority={idp.authority}
+      client_id={idp.clientId}
+      redirect_uri={idp.redirectUri}
+      post_logout_redirect_uri={idp.postLogoutRedirectUri}
+      scope={idp.scopes.join(' ')}
+      extraTokenParams={{ scope: idp.scopes.join(' ') }}
+      loadUserInfo={true}
+      metadata={idp.endSessionEndpoint ? { end_session_endpoint: idp.endSessionEndpoint } : undefined}
+      onSigninCallback={() => {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }}
+    >
+      <OIDCAppAuthProvider>{children}</OIDCAppAuthProvider>
+    </AuthProvider>
+  );
+}
+
+async function bootstrap() {
+  const config = await loadAppConfig();
+
+  const app = (
+    <React.StrictMode>
+      <OxygenUIThemeProvider
+        themes={[
+          { key: 'acrylicOrange', label: 'Acrylic Orange Theme', theme: AcrylicOrangeTheme },
+          { key: 'acrylicPurple', label: 'Acrylic Purple Theme', theme: AcrylicPurpleTheme },
+          { key: 'highContrast',  label: 'High Contrast Theme',  theme: HighContrastTheme  },
+          { key: 'classic',       label: 'Classic Theme',        theme: ClassicTheme       },
+        ]}
+        initialTheme="acrylicOrange"
+      >
+        <AppConfigContext.Provider value={config}>
+          {buildAuthTree(
+            config,
+            <IntlProvider locale="en" defaultLocale="en">
+              <App />
+            </IntlProvider>
+          )}
+        </AppConfigContext.Provider>
+      </OxygenUIThemeProvider>
+    </React.StrictMode>
+  );
+
+  root.render(app);
+}
+
+bootstrap();

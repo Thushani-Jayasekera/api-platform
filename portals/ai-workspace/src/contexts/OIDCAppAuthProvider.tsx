@@ -19,11 +19,12 @@
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useAuth } from 'react-oidc-context';
 import { AppAuthContext, type AppUser } from './AppAuthContext';
-import { OIDC_USERNAME_CLAIM, OIDC_EMAIL_CLAIM, PERMISSION_MODE } from '../config.env';
+import { PERMISSION_MODE } from '../config.env';
 import { expandScopes, ROLE_SCOPES, checkPermission, isPlatformRole } from '../auth/permissions';
 import type { PlatformRole } from '../auth/permissions';
 import { handleLogout } from '../auth/logout';
 import { setStoredToken } from '../clients/choreoApiClient';
+import { useAppConfig } from '../config/AppConfigContext';
 
 function decodeJwtPayload(token: string): Record<string, unknown> {
   try {
@@ -49,6 +50,7 @@ function extractRoleFromJwt(token: string): PlatformRole | null {
 
 export function OIDCAppAuthProvider({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
+  const { auth: { idp: { claims } } } = useAppConfig();
 
   useEffect(() => {
     const token = auth.user?.access_token;
@@ -70,12 +72,12 @@ export function OIDCAppAuthProvider({ children }: { children: React.ReactNode })
     const claim = (key: string) =>
       (idClaims[key] as string | undefined) || (atClaims[key] as string | undefined) || null;
     return {
-      name: claim(OIDC_USERNAME_CLAIM),
-      email: claim(OIDC_EMAIL_CLAIM),
+      name: claim(claims.username),
+      email: claim(claims.email),
       role,
       scopes,
     };
-  }, [auth.user]);
+  }, [auth.user, claims]);
 
   const login = useCallback(async () => {
     await auth.signinRedirect();

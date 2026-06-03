@@ -67,9 +67,14 @@ import {
 } from '../../../../apis/MCP/mcpDevPortalApis';
 import type { MCPServer } from '../../../../utils/types';
 import NoMCPServers from '../../../../assets/images/NoMCPServers.svg';
+import { useAppAuth } from '../../../../contexts/AppAuthContext';
+import { SCOPES } from '../../../../auth/permissions';
 
 export default function ExternalServersList(): JSX.Element {
   const navigate = useNavigate();
+  const { hasPermission } = useAppAuth();
+  const canCreate = hasPermission(SCOPES.MCP_PROXY_CREATE);
+  const canDelete = hasPermission(SCOPES.MCP_PROXY_DELETE);
   const { projectSlug } = useParams<{ projectSlug: string }>();
   const {
     currentProject,
@@ -348,7 +353,7 @@ export default function ExternalServersList(): JSX.Element {
             </PageTitle.SubHeader>
           </PageTitle>
 
-          {servers.length > 0 ? (
+          {servers.length > 0 && canCreate ? (
             <Button
               variant="contained"
               component={RouterLink}
@@ -455,21 +460,23 @@ export default function ExternalServersList(): JSX.Element {
                   defaultMessage="Set up an MCP Proxy to expose tools, prompts, and resources through your AI gateway workflows."
                 />
               </Typography>
-              <Button
-                variant="contained"
-                component={RouterLink}
-                to={buildProjectPath(
-                  currentOrganization,
-                  effectiveProject,
-                  '/mcp-proxy/new'
-                )}
-                startIcon={<Plus size={20} />}
-              >
-                <FormattedMessage
-                  id="aiWorkspace.pages.appShell.appShellPages.externalServers.Main.create.external.server"
-                  defaultMessage="Create MCP Proxy"
-                />
-              </Button>
+              {canCreate && (
+                <Button
+                  variant="contained"
+                  component={RouterLink}
+                  to={buildProjectPath(
+                    currentOrganization,
+                    effectiveProject,
+                    '/mcp-proxy/new'
+                  )}
+                  startIcon={<Plus size={20} />}
+                >
+                  <FormattedMessage
+                    id="aiWorkspace.pages.appShell.appShellPages.externalServers.Main.create.external.server"
+                    defaultMessage="Create MCP Proxy"
+                  />
+                </Button>
+              )}
             </Stack>
           </Box>
         </Grid>
@@ -580,17 +587,19 @@ export default function ExternalServersList(): JSX.Element {
                             {formatRelativeTime(server.updatedAt)}
                           </TableCell>
                           <TableCell align="right">
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setDeleteTarget(server);
-                              }}
-                              aria-label={`Delete ${server.name}`}
-                            >
-                              <Trash2 size={16} />
-                            </IconButton>
+                            {canDelete && (
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setDeleteTarget(server);
+                                }}
+                                aria-label={`Delete ${server.name}`}
+                              >
+                                <Trash2 size={16} />
+                              </IconButton>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))

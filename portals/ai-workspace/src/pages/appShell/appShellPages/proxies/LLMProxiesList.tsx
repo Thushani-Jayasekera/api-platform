@@ -62,6 +62,8 @@ import { truncateProviderDisplayName } from '../../../../utils/providerTemplateD
 import { FormattedMessage } from 'react-intl';
 import NoProxies from '../../../../assets/images/NoProxies.svg';
 import ErrorAlert from '../../../../Components/common/ErrorAlert';
+import { useAppAuth } from '../../../../contexts/AppAuthContext';
+import { SCOPES } from '../../../../auth/permissions';
 
 const MAX_LLM_PROXIES_PER_ORG = 5;
 
@@ -79,6 +81,9 @@ function getHttpStatusCode(error?: Error | null): number | null {
 
 export default function LLMProxiesList() {
   const navigate = useNavigate();
+  const { hasPermission } = useAppAuth();
+  const canCreate = hasPermission(SCOPES.LLM_PROXY_CREATE);
+  const canDelete = hasPermission(SCOPES.LLM_PROXY_DELETE);
   const {
     proxiesResponse,
     isLoading: isProxiesLoading,
@@ -222,7 +227,7 @@ export default function LLMProxiesList() {
                 spacing={1.5}
                 sx={{ ml: 'auto', flexShrink: 0 }}
               >
-                {proxies.length > 0 ? (
+                {proxies.length > 0 && canCreate ? (
                   <Tooltip title={isProxyQuotaReached ? proxyQuotaTooltip : ''}>
                     <Box component="span">
                       <Button
@@ -368,20 +373,22 @@ export default function LLMProxiesList() {
                     }
                   />
                 </Typography>
-                <Tooltip title={isProxyQuotaReached ? proxyQuotaTooltip : ''}>
-                  <Box component="span">
-                    <Button
-                      variant="contained"
-                      component={RouterLink}
-                      to={newProxyPath}
-                      startIcon={<Plus size={20} />}
-                      disabled={isProxyQuotaReached}
-                      sx={createProxyButtonSx}
-                    >
-                      Create App LLM Proxy
-                    </Button>
-                  </Box>
-                </Tooltip>
+                {canCreate && (
+                  <Tooltip title={isProxyQuotaReached ? proxyQuotaTooltip : ''}>
+                    <Box component="span">
+                      <Button
+                        variant="contained"
+                        component={RouterLink}
+                        to={newProxyPath}
+                        startIcon={<Plus size={20} />}
+                        disabled={isProxyQuotaReached}
+                        sx={createProxyButtonSx}
+                      >
+                        Create App LLM Proxy
+                      </Button>
+                    </Box>
+                  </Tooltip>
+                )}
               </Stack>
             </Box>
           </Grid>
@@ -491,20 +498,22 @@ export default function LLMProxiesList() {
                               {formatRelativeTime(proxy.updatedAt)}
                             </TableCell>
                             <TableCell align="right">
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setDeleteTarget({
-                                    id: proxy.id,
-                                    name: proxy.name,
-                                  });
-                                }}
-                                aria-label={`Delete ${proxy.name}`}
-                              >
-                                <Trash2 size={16} />
-                              </IconButton>
+                              {canDelete && (
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setDeleteTarget({
+                                      id: proxy.id,
+                                      name: proxy.name,
+                                    });
+                                  }}
+                                  aria-label={`Delete ${proxy.name}`}
+                                >
+                                  <Trash2 size={16} />
+                                </IconButton>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))

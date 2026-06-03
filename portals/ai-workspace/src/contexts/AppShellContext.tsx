@@ -90,7 +90,7 @@ export const AppShellProvider: React.FC<AppShellProviderProps> = ({
   userName: initialUserName,
   userEmail: initialUserEmail,
 }) => {
-  const { setIsTokenExchanged, getOrganizations, setOrganizations } = useChoreoUser();
+  const { setIsTokenExchanged, getOrganizations, setOrganizations, exchangeOrgToken } = useChoreoUser();
 
   const isInitializedRef = useRef(false);
   const isOrgChangeInProgressRef = useRef(false);
@@ -139,6 +139,13 @@ export const AppShellProvider: React.FC<AppShellProviderProps> = ({
       setError(null);
 
       try {
+        // Get a new platform token scoped to the selected org.
+        // All subsequent API calls will use this token so the org claim matches.
+        const ok = await exchangeOrgToken(org.id);
+        if (!ok) {
+          setError('Failed to obtain token for organization');
+          return;
+        }
         sessionStorage.setItem('currentOrgHandle', org.handle);
         setIsTokenExchanged(true);
         await fetchProjectsForOrg();
@@ -183,19 +190,7 @@ export const AppShellProvider: React.FC<AppShellProviderProps> = ({
         return;
       }
 
-      // If the token carries an org UUID that doesn't match any registered org,
-      // the user needs to register a new org for that identity.
-      const pendingOrgUuid = sessionStorage.getItem('pending_org_uuid');
-      if (pendingOrgUuid && !orgs.some((o) => o.id === pendingOrgUuid || o.uuid === pendingOrgUuid)) {
-        logger.warn('Token org UUID does not match any registered org. Redirecting to /register-org');
-        if (!window.location.pathname.startsWith('/register-org')) {
-          keepLoading = true;
-          window.location.href = '/register-org';
-        }
-        return;
-      }
-
-      // Determine which org to display
+      // Determine which org to display — URL takes priority, then last-used, then first in list.
       let targetOrg = orgs[0];
       if (urlOrgHandle) {
         const found = orgs.find((o) => o.handle === urlOrgHandle);
@@ -203,6 +198,14 @@ export const AppShellProvider: React.FC<AppShellProviderProps> = ({
       } else if (storedOrgHandle) {
         const found = orgs.find((o) => o.handle === storedOrgHandle);
         if (found) targetOrg = found;
+      }
+
+      // Exchange the identity token for an org-scoped platform token.
+      // This ensures the JWT carried by all subsequent API calls has the correct org claim.
+      const ok = await exchangeOrgToken(targetOrg.id);
+      if (!ok) {
+        setError('Failed to obtain org-scoped token. Please try logging in again.');
+        return;
       }
 
       setCurrentOrganizationState(targetOrg);
@@ -218,7 +221,7 @@ export const AppShellProvider: React.FC<AppShellProviderProps> = ({
       // so the loading spinner remains visible while the page navigates away.
       if (!keepLoading) setIsLoading(false);
     }
-  }, [getOrganizations, setOrganizations, fetchProjectsForOrg, setIsTokenExchanged]);
+  }, [getOrganizations, setOrganizations, fetchProjectsForOrg, setIsTokenExchanged, exchangeOrgToken]);
 
   useEffect(() => {
     if (isInitializedRef.current) return;

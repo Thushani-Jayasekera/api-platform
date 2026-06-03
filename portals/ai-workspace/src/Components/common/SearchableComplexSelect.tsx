@@ -20,8 +20,10 @@ import React, { ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   Box,
   ComplexSelect,
+  Divider,
   InputAdornment,
   ListSubheader,
+  MenuItem,
   SxProps,
   TextField,
   Theme,
@@ -58,6 +60,11 @@ type Props<T extends SearchableComplexSelectOption> = {
   onFieldClick?: () => void;
   fieldClickAriaLabel?: string;
   dropdownClickAriaLabel?: string;
+  footerAction?: {
+    label: string;
+    icon?: ReactNode;
+    onClick: () => void;
+  };
 };
 
 export default function SearchableComplexSelect<
@@ -84,6 +91,7 @@ export default function SearchableComplexSelect<
   onFieldClick,
   fieldClickAriaLabel,
   dropdownClickAriaLabel,
+  footerAction,
 }: Props<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -210,6 +218,26 @@ export default function SearchableComplexSelect<
           </ComplexSelect.MenuItem>
         ))
       )}
+
+      {footerAction && [
+        <Divider key="__footer_divider__" />,
+        <MenuItem
+          key="__footer_action__"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleClose();
+            footerAction.onClick();
+          }}
+          sx={{ gap: 1, color: 'primary.main', fontWeight: 500 }}
+        >
+          {footerAction.icon}
+          {footerAction.label}
+        </MenuItem>,
+      ]}
     </ComplexSelect>
   );
 

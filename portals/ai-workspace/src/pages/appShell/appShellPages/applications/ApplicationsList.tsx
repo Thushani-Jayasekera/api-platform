@@ -59,6 +59,8 @@ import type { Application } from '../../../../utils/types';
 import ErrorAlert from '../../../../Components/common/ErrorAlert';
 import useAIWorkspaceSnackbar from '../../../../hooks/aiWorkspaceSnackbar';
 import NoApplications from '../../../../assets/images/NoApplications.svg';
+import { useAppAuth } from '../../../../contexts/AppAuthContext';
+import { SCOPES } from '../../../../auth/permissions';
 
 function getInitials(name: string): string {
   const words = name.trim().split(/\s+/);
@@ -74,6 +76,9 @@ function truncateText(text: string, maxLength: number): string {
 
 export default function ApplicationsList() {
   const navigate = useNavigate();
+  const { hasPermission } = useAppAuth();
+  const canCreate = hasPermission(SCOPES.APPLICATION_CREATE);
+  const canDelete = hasPermission(SCOPES.APPLICATION_DELETE);
   const { projectSlug } = useParams<{ projectSlug: string }>();
   const {
     currentProject,
@@ -282,7 +287,7 @@ export default function ApplicationsList() {
           </PageTitle.SubHeader>
         </PageTitle>
 
-        {filteredApplications.length > 0 ? (
+        {filteredApplications.length > 0 && canCreate ? (
           <Button
             variant="contained"
             component={RouterLink}
@@ -355,17 +360,19 @@ export default function ApplicationsList() {
                     defaultMessage="Set up a GenAI application to securely consume AI services through your workspace."
                   />
                 </Typography>
-                <Button
-                  variant="contained"
-                  component={RouterLink}
-                  to={newApplicationPath}
-                  startIcon={<Plus size={20} />}
-                >
-                  <FormattedMessage
-                    id="aiWorkspace.pages.appShell.appShellPages.applications.ApplicationsList.create.application"
-                    defaultMessage="Create Application"
-                  />
-                </Button>
+                {canCreate && (
+                  <Button
+                    variant="contained"
+                    component={RouterLink}
+                    to={newApplicationPath}
+                    startIcon={<Plus size={20} />}
+                  >
+                    <FormattedMessage
+                      id="aiWorkspace.pages.appShell.appShellPages.applications.ApplicationsList.create.application"
+                      defaultMessage="Create Application"
+                    />
+                  </Button>
+                )}
               </Stack>
             </Box>
           </Grid>
@@ -540,17 +547,19 @@ export default function ApplicationsList() {
                             </Typography>
                           </Stack>
 
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setDeleteTarget(app);
-                            }}
-                            aria-label={`Delete ${app.name}`}
-                          >
-                            <Trash2 size={16} />
-                          </IconButton>
+                          {canDelete && (
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDeleteTarget(app);
+                              }}
+                              aria-label={`Delete ${app.name}`}
+                            >
+                              <Trash2 size={16} />
+                            </IconButton>
+                          )}
                         </Box>
                       </Box>
                     </Form.CardButton>

@@ -46,7 +46,7 @@ import {
   registerOrganization,
   type RegisterOrganizationRequest,
 } from '../../apis/platformApis';
-import { DISABLE_AUTH } from '../../config.env';
+import { useAppConfig } from '../../config/AppConfigContext';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -60,17 +60,12 @@ const REGIONS = [
   { value: 'ap-southeast-1', label: 'AP Southeast 1 (ap-southeast-1)' },
 ] as const;
 
-const HANDLE_PATTERN = /^[a-z0-9-]+$/;
 /** ms to show the success banner before navigating to the workspace */
 const REDIRECT_DELAY_MS = 1500;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const generateUUID = (): string => crypto.randomUUID();
-
-const claimOrgUuid    = sessionStorage.getItem('pending_org_uuid');
-const claimOrgName    = sessionStorage.getItem('pending_org_name');
-const claimOrgHandle  = sessionStorage.getItem('pending_org_handle');
 
 const toHandle = (name: string): string =>
   name.toLowerCase().trim()
@@ -135,6 +130,7 @@ function RedirectingToWorkspace({ orgName }: { orgName: string }) {
 export default function OrgRegisterPage() {
   const navigate = useNavigate();
   const { user, logout } = useAppAuth();
+  const { devMode } = useAppConfig();
 
   const userForMenu = {
     name: user?.name || user?.email || 'User',
@@ -143,9 +139,9 @@ export default function OrgRegisterPage() {
   };
 
   const [form, setForm] = useState<FormState>({
-    id: claimOrgUuid ?? generateUUID(),
-    name: claimOrgName ?? '',
-    handle: claimOrgHandle ?? '',
+    id: generateUUID(),
+    name: '',
+    handle: '',
     region: 'us',
   });
   const [errors, setErrors]           = useState<FormErrors>({});
@@ -175,9 +171,7 @@ export default function OrgRegisterPage() {
     }
     if (!f.handle.trim()) {
       e.handle = 'Handle is required.';
-    } else if (!HANDLE_PATTERN.test(f.handle)) {
-      e.handle = 'Only lowercase letters, numbers, and hyphens allowed.';
-    } else if (f.handle.length < 2) {
+    } else if (f.handle.trim().length < 2) {
       e.handle = 'Handle must be at least 2 characters.';
     }
     if (!f.region) {
@@ -193,15 +187,14 @@ export default function OrgRegisterPage() {
     setForm((prev) => ({
       ...prev,
       name,
-      // Only auto-derive handle when it isn't locked from a claim
-      handle: claimOrgHandle ? prev.handle : toHandle(name),
+      handle: toHandle(name),
     }));
     setErrors((prev) => ({ ...prev, name: undefined, handle: undefined }));
     setApiError(null);
   }, []);
 
   const handleHandleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm((prev) => ({ ...prev, handle: e.target.value.toLowerCase() }));
+    setForm((prev) => ({ ...prev, handle: e.target.value }));
     setErrors((prev) => ({ ...prev, handle: undefined }));
     setApiError(null);
   }, []);
@@ -238,9 +231,6 @@ export default function OrgRegisterPage() {
       const org = await registerOrganization(payload);
 
       sessionStorage.setItem('currentOrgHandle', org.handle);
-      sessionStorage.removeItem('pending_org_uuid');
-      sessionStorage.removeItem('pending_org_name');
-      sessionStorage.removeItem('pending_org_handle');
 
       setRegisteredOrgName(org.name);
       setRegisteredOrgHandle(org.handle);
@@ -333,7 +323,7 @@ export default function OrgRegisterPage() {
             ))}
           </Stack>
 
-          {DISABLE_AUTH && (
+          {devMode && (
             <Chip
               label="Local development mode"
               size="small"
@@ -403,7 +393,7 @@ export default function OrgRegisterPage() {
                       <Stack spacing={2.5}>
 
                         {/* Organization Name */}
-                        <FormControl fullWidth required disabled={isSubmitting || !!claimOrgName}>
+                        <FormControl fullWidth required disabled={isSubmitting}>
                           <FormLabel sx={{ mb: 0.5, fontWeight: 500 }}>
                             Organization Name
                           </FormLabel>
@@ -412,16 +402,16 @@ export default function OrgRegisterPage() {
                             value={form.name}
                             onChange={handleNameChange}
                             error={!!errors.name}
-                            fullWidth autoFocus={!claimOrgName}
-                            disabled={isSubmitting || !!claimOrgName}
+                            fullWidth autoFocus
+                            disabled={isSubmitting}
                           />
                           <FormHelperText error={!!errors.name}>
-                            {errors.name ?? (claimOrgName ? 'Sourced from your identity provider token' : undefined)}
+                            {errors.name}
                           </FormHelperText>
                         </FormControl>
 
                         {/* Handle */}
-                        <FormControl fullWidth required disabled={isSubmitting || !!claimOrgHandle}>
+                        <FormControl fullWidth required disabled={isSubmitting}>
                           <FormLabel sx={{ mb: 0.5, fontWeight: 500 }}>
                             Handle
                           </FormLabel>
@@ -431,11 +421,10 @@ export default function OrgRegisterPage() {
                             onChange={handleHandleChange}
                             error={!!errors.handle}
                             fullWidth
-                            disabled={isSubmitting || !!claimOrgHandle}
-                            inputProps={{ pattern: '[a-z0-9-]+' }}
+                            disabled={isSubmitting}
                           />
                           <FormHelperText error={!!errors.handle}>
-                            {errors.handle ?? (claimOrgHandle ? 'Sourced from your identity provider token' : undefined)}
+                            {errors.handle}
                           </FormHelperText>
                         </FormControl>
 
@@ -458,37 +447,36 @@ export default function OrgRegisterPage() {
                           )}
                         </FormControl>
 
-                        {/* UUID — read-only from token claim, or auto-generated with refresh */}
+                        {/* UUID — editable, with regenerate button */}
                         <FormControl fullWidth disabled={isSubmitting}>
                           <FormLabel sx={{ mb: 0.5, fontWeight: 500 }}>
                             Organization ID (UUID)
                           </FormLabel>
-                          <Paper
-                            variant="outlined"
-                            sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 1, gap: 1, borderRadius: 1 }}
-                          >
-                            <Typography
-                              variant="body2"
-                              sx={{ flex: 1, fontFamily: 'monospace', fontSize: '0.75rem', color: 'text.secondary', wordBreak: 'break-all' }}
-                            >
-                              {form.id}
-                            </Typography>
-                            {!claimOrgUuid && (
-                              <Tooltip title="Regenerate UUID">
-                                <Box
-                                  component="span"
-                                  sx={{ cursor: 'pointer', color: 'text.secondary', display: 'flex', flexShrink: 0, '&:hover': { color: 'primary.main' } }}
-                                  onClick={regenerateId}
-                                >
-                                  <RefreshCw size={14} />
-                                </Box>
-                              </Tooltip>
-                            )}
-                          </Paper>
+                          <TextField
+                            value={form.id}
+                            onChange={(e) => {
+                              setForm((prev) => ({ ...prev, id: e.target.value }));
+                              setApiError(null);
+                            }}
+                            fullWidth
+                            disabled={isSubmitting}
+                            inputProps={{ style: { fontFamily: 'monospace', fontSize: '0.8rem' } }}
+                            InputProps={{
+                              endAdornment: (
+                                <Tooltip title="Regenerate UUID">
+                                  <Box
+                                    component="span"
+                                    sx={{ cursor: 'pointer', color: 'text.secondary', display: 'flex', pr: 0.5, '&:hover': { color: 'primary.main' } }}
+                                    onClick={regenerateId}
+                                  >
+                                    <RefreshCw size={16} />
+                                  </Box>
+                                </Tooltip>
+                              ),
+                            }}
+                          />
                           <FormHelperText>
-                            {claimOrgUuid
-                              ? 'Sourced from your identity provider token'
-                              : 'Auto-generated — click ↻ to regenerate'}
+                            Auto-generated — edit or click ↻ to regenerate
                           </FormHelperText>
                         </FormControl>
 

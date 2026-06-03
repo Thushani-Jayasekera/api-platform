@@ -24,6 +24,7 @@ import {
   useLocation,
   useNavigate,
 } from 'react-router-dom';
+import { Box, CircularProgress } from '@wso2/oxygen-ui';
 import Login from './pages/login/login';
 import AppShellMain from './pages/appShell/appShellMain';
 import { AppShellProvider } from './contexts/AppShellContext';
@@ -74,8 +75,9 @@ import { MCPServerValidationProvider } from './contexts/MCP';
 import { LLMProvidersProvider } from './contexts/llmProvider';
 import { ChoreoUserProvider, useChoreoUser } from './contexts/ChoreoUserContext';
 import { setStoredToken } from './clients/choreoApiClient';
-import { OIDC_ORG_CLAIM, OIDC_ORG_NAME_CLAIM, OIDC_ORG_HANDLE_CLAIM } from './config.env';
 import { useAppAuth } from './contexts/AppAuthContext';
+import { useAppConfig } from './config/AppConfigContext';
+import { addOrgMember } from './apis/platformApis';
 import React from 'react';
 
 function extractClaimFromJwt(token: string, claim: string): string | null {
@@ -99,9 +101,17 @@ function sanitizeReturnUrl(url: string): string {
   return clean || '/';
 }
 
+function AuthLoadingSpinner() {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+      <CircularProgress />
+    </Box>
+  );
+}
+
 function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAppAuth();
-  if (isLoading) return null;
+  if (isLoading) return <AuthLoadingSpinner />;
   if (isAuthenticated) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
@@ -111,7 +121,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   if (isLoading) {
-    return null;
+    return <AuthLoadingSpinner />;
   }
 
   if (!isAuthenticated) {
@@ -143,7 +153,7 @@ function SigninCallbackRoute() {
     }
   }, [isAuthenticated, isLoading, navigate]);
 
-  return null;
+  return <AuthLoadingSpinner />;
 }
 
 // Runs once after sign-in to fetch the access token and load organizations.
@@ -151,6 +161,8 @@ function PostSignInInit({ children }: { children: React.ReactNode }) {
   const { accessToken } = useAppAuth();
   const { getOrganizations, setOrganizations, setIsTokenExchanged, isTokenExchanged } = useChoreoUser();
   const navigate = useNavigate();
+  const { auth } = useAppConfig();
+  const { idp: { claims }, fileBasedAuth } = auth;
 
   React.useEffect(() => {
     if (isTokenExchanged) return;
@@ -160,17 +172,40 @@ function PostSignInInit({ children }: { children: React.ReactNode }) {
         const token = accessToken;
         if (token) {
           setStoredToken(token);
-          const orgUuid = extractClaimFromJwt(token, OIDC_ORG_CLAIM);
+        }
+
+        // File-based auth: the only org is the one declared in the config.
+        // If the logged-in user is not yet a member, add them now using their
+        // token (which is valid at this point). Then navigate to that org.
+        if (fileBasedAuth.enabled) {
+          const orgs = await getOrganizations();
+          const configuredOrg = fileBasedAuth.org;
+          if (!orgs.find((o) => o.id === configuredOrg.id)) {
+            const userId = token ? extractClaimFromJwt(token, 'sub') : null;
+            const role = token ? extractClaimFromJwt(token, 'role') : null;
+            if (userId) {
+              await addOrgMember(configuredOrg.id, userId, role ?? 'viewer');
+            }
+          }
+          sessionStorage.setItem('currentOrgHandle', configuredOrg.handle);
+          setIsTokenExchanged(true);
+          navigate(`/organizations/${configuredOrg.handle}/home`, { replace: true });
+          return;
+        }
+
+        // IDP mode: extract org hints from the token, then resolve orgs.
+        if (token) {
+          const orgUuid = extractClaimFromJwt(token, claims.organization);
           if (orgUuid) {
             sessionStorage.setItem('pending_org_uuid', orgUuid);
           }
-          const orgName = extractClaimFromJwt(token, OIDC_ORG_NAME_CLAIM);
+          const orgName = extractClaimFromJwt(token, claims.orgName);
           if (orgName) {
             sessionStorage.setItem('pending_org_name', orgName);
           } else {
             sessionStorage.removeItem('pending_org_name');
           }
-          const orgHandle = extractClaimFromJwt(token, OIDC_ORG_HANDLE_CLAIM);
+          const orgHandle = extractClaimFromJwt(token, claims.orgHandle);
           if (orgHandle) {
             sessionStorage.setItem('pending_org_handle', orgHandle);
           } else {
@@ -181,13 +216,8 @@ function PostSignInInit({ children }: { children: React.ReactNode }) {
         setOrganizations(orgs);
         setIsTokenExchanged(true);
 
-        const orgUuid = sessionStorage.getItem('pending_org_uuid');
-        const matchedOrg = orgUuid
-          ? orgs.find((o) => o.id === orgUuid || o.uuid === orgUuid)
-          : orgs[0];
-
-        if (matchedOrg) {
-          navigate(`/organizations/${matchedOrg.handle}/home`, { replace: true });
+        if (orgs.length > 0) {
+          navigate(`/organizations/${orgs[0].handle}/home`, { replace: true });
         } else {
           navigate('/register-org', { replace: true });
         }

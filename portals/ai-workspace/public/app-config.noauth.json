@@ -1,0 +1,49 @@
+{
+  "_comment": "No-auth mode — skips login entirely, auto-injects an admin JWT. Use when you want zero auth friction for rapid local development.",
+  "devMode": true,
+  "auth": {
+    "enabled": false,
+    "idp": {
+      "enabled": false,
+      "authority": "",
+      "clientId": "",
+      "redirectUri": "https://localhost:3009/signin",
+      "postLogoutRedirectUri": "https://localhost:3009/login",
+      "endSessionEndpoint": "",
+      "scopes": ["openid", "profile", "email"],
+      "claims": {
+        "organization": "organization",
+        "username": "given_name",
+        "email": "email",
+        "orgName": "org_name",
+        "orgHandle": "org_handle"
+      },
+      "idpHints": {
+        "param": "fidp",
+        "google": "google",
+        "github": "github",
+        "microsoft": "microsoft",
+        "enterprise": "EnterpriseIDP"
+      },
+      "tokenExchange": { "enabled": false }
+    },
+    "fileBasedAuth": {
+      "enabled": true,
+      "org": {
+        "id": "db278eb4-9e08-4a6e-a00a-493d0ce4b8a6",
+        "name": "Local Dev Org",
+        "handle": "local-dev-org"
+      },
+      "users": [
+        {
+          "username": "admin",
+          "password": "admin",
+          "name": "Admin User",
+          "email": "admin@localhost",
+          "role": "admin"
+        }
+      ],
+      "tokenExchange": { "enabled": false }
+    }
+  }
+}

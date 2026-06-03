@@ -29,7 +29,7 @@ import {
   Typography,
   Box,
 } from '@wso2/oxygen-ui';
-import { Bell, Building, X } from '@wso2/oxygen-ui-icons-react';
+import { Bell, Building, Plus, X } from '@wso2/oxygen-ui-icons-react';
 import SearchableComplexSelect from '../../Components/common/SearchableComplexSelect';
 import Logo from '../../Components/Logo';
 import UserMenu from '../../Components/UserMenu';
@@ -217,6 +217,11 @@ export default function AppHeader(props: Props) {
           emptyMessage="No organizations"
           noResultsMessage="No matching organizations"
           searchPlaceholder="Search organizations"
+          footerAction={{
+            label: 'New organization',
+            icon: <Plus size={16} />,
+            onClick: () => navigate('/register-org'),
+          }}
         />
 
         {canShowProjectSwitcher ? (

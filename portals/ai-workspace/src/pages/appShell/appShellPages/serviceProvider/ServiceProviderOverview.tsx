@@ -82,7 +82,7 @@ import {
   buildOrgPath,
   buildProjectPath,
 } from '../../../../utils/projectRouting';
-import { API_BASE_URLS, PLATFORM_API_BASE_URL } from '../../../../config.env';
+import { PLATFORM_API_BASE_URL } from '../../../../config.env';
 import {
   getProviderTemplateDisplayName,
   truncateProviderDisplayName,

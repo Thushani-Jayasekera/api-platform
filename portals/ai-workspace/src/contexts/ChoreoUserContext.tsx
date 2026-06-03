@@ -34,7 +34,8 @@ import React, {
 import { logger } from '../utils/logger';
 import type { Organization, ValidateUserResponse } from '../utils/types';
 import { PLATFORM_API_BASE_URL } from '../config.env';
-import { getOrgToken } from '../clients/choreoApiClient';
+import { getOrgToken, getStoredToken, setExchangedToken } from '../clients/choreoApiClient';
+import { useAppConfig } from '../config/AppConfigContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -64,45 +65,60 @@ const ChoreoUserContext = createContext<ChoreoUserContextType | null>(null);
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Fetch the current user's organization from the Platform API.
- * Returns a single org wrapped in an array (Platform API returns one org per JWT).
- *
- * TODO: [REMOVE BEFORE PRODUCTION] getStoredToken() falls back to a hardcoded
- *       dev token in choreoApiClient.ts. Remove DEV_FALLBACK_TOKEN once real
- *       auth is wired up.
+ * Fetch all organizations the authenticated user belongs to from the Platform API.
+ * Uses GET /users/me/organizations which returns an array and auto-seeds membership
+ * from the JWT org claim on first call (backward-compatible migration).
+ * Retries on network errors (ECONNREFUSED) to handle backend startup latency.
  */
-async function fetchPlatformOrganization(): Promise<Organization[]> {
-  // getStoredToken() always returns a string (sessionStorage value or DEV_FALLBACK_TOKEN)
+async function fetchPlatformOrganizations(retries = 5, baseDelayMs = 2000): Promise<Organization[]> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'Content-Type': 'application/json',
     Authorization: `Bearer ${getOrgToken()}`,
   };
 
-  const res = await fetch(`${PLATFORM_API_BASE_URL}/organizations`, { headers });
-
-  if (!res.ok) {
-    if (res.status === 404) {
-      logger.warn('[ChoreoUserContext] No organization found — register one at /register-org');
-      return [];
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) {
+      await new Promise(r => setTimeout(r, baseDelayMs * attempt));
+      logger.info('[ChoreoUserContext] Retrying GET /users/me/organizations (attempt %d/%d)', attempt, retries);
     }
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.message ?? `GET /organizations failed: HTTP ${res.status}`);
+    try {
+      const res = await fetch(`${PLATFORM_API_BASE_URL}/users/me/organizations`, { headers });
+
+      if (!res.ok) {
+        // Treat 404 or 500 as "no orgs yet" — don't retry, send to /register-org.
+        if (res.status === 404 || res.status === 500) {
+          logger.warn('[ChoreoUserContext] No organizations found (HTTP %d) — register one at /register-org', res.status);
+          return [];
+        }
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message ?? `GET /users/me/organizations failed: HTTP ${res.status}`);
+      }
+
+      const platformOrgs: Array<{ id: string; handle: string; name: string; region: string }> = await res.json();
+
+      if (!platformOrgs || platformOrgs.length === 0) {
+        logger.info('[ChoreoUserContext] No organizations found for user');
+        return [];
+      }
+
+      logger.info('[ChoreoUserContext] Loaded organizations:', platformOrgs.length);
+
+      return platformOrgs.map((o) => ({
+        id: o.id,
+        uuid: o.id,
+        handle: o.handle,
+        name: o.name,
+        region: o.region,
+        owner: { id: 0, idpId: '' },
+      }));
+    } catch (err) {
+      lastErr = err;
+      logger.warn('[ChoreoUserContext] GET /users/me/organizations failed (attempt %d): %o', attempt, err);
+    }
   }
-
-  // Platform API returns a single Organization object (not an array)
-  const platformOrg = await res.json();
-  logger.info('[ChoreoUserContext] Loaded organization:', platformOrg.handle);
-
-  const org: Organization = {
-    id: platformOrg.id,      // UUID string
-    uuid: platformOrg.id,    // alias kept for backward compat
-    handle: platformOrg.handle,
-    name: platformOrg.name,
-    region: platformOrg.region,
-    owner: { id: 0, idpId: '' },
-  };
-  return [org];
+  throw lastErr;
 }
 
 // ── Provider ──────────────────────────────────────────────────────────────────
@@ -110,15 +126,47 @@ async function fetchPlatformOrganization(): Promise<Organization[]> {
 export const ChoreoUserProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
+  const { auth } = useAppConfig();
+  const tokenExchangeEnabled = auth.fileBasedAuth.enabled
+    ? auth.fileBasedAuth.tokenExchange.enabled
+    : auth.idp.tokenExchange.enabled;
+
   const [isTokenExchanged, setIsTokenExchanged] = useState(false);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [isOrgAdmin, setIsOrgAdmin] = useState(true); // admin by default in local dev
 
-  // No token exchange needed — always return admin:true
-  const exchangeOrgToken = useCallback(async (_orgHandle: string): Promise<boolean> => {
-    logger.info('[ChoreoUserContext] exchangeOrgToken — no-op in platform mode');
-    return true;
-  }, []);
+  // Exchange the current identity token for a platform-issued org-scoped JWT.
+  // Calls POST /auth/token with the target org ID; the platform API validates
+  // membership and returns a signed token with organization=<orgId> in its claims.
+  // Skipped for file-based/no-auth modes — the locally-built JWT already carries the org claim.
+  const exchangeOrgToken = useCallback(async (orgId: string): Promise<boolean> => {
+    if (!tokenExchangeEnabled) {
+      logger.info('[ChoreoUserContext] Token exchange disabled — skipping for org', orgId);
+      return true;
+    }
+    logger.info('[ChoreoUserContext] Requesting org-scoped token for org', orgId);
+    try {
+      const res = await fetch(`${PLATFORM_API_BASE_URL}/auth/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getStoredToken()}`,
+        },
+        body: JSON.stringify({ orgId }),
+      });
+      if (!res.ok) {
+        logger.error('[ChoreoUserContext] Token exchange failed for org', orgId, 'status', res.status);
+        return false;
+      }
+      const data: { token: string } = await res.json();
+      setExchangedToken(data.token);
+      logger.info('[ChoreoUserContext] Org-scoped token stored for org', orgId);
+      return true;
+    } catch (err) {
+      logger.error('[ChoreoUserContext] Token exchange error:', err);
+      return false;
+    }
+  }, [tokenExchangeEnabled]);
 
   // Not used in platform mode
   const validateUser = useCallback(async (): Promise<ValidateUserResponse> => {
@@ -126,9 +174,9 @@ export const ChoreoUserProvider: React.FC<{ children: ReactNode }> = ({
     return { organizations: [], idpId: '' };
   }, []);
 
-  // Real call to Platform API
+  // Real call to Platform API — returns all orgs the user belongs to
   const getOrganizations = useCallback(async (): Promise<Organization[]> => {
-    return fetchPlatformOrganization();
+    return fetchPlatformOrganizations();
   }, []);
 
   // Admin check — always true in local dev

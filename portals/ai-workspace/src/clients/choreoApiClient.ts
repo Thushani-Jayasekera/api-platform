@@ -63,6 +63,13 @@ export const setStoredToken = (token: string) =>
 export const clearStoredToken = () =>
   sessionStorage.removeItem(TOKEN_KEY);
 
+/**
+ * Store an org-scoped platform token returned by POST /auth/token.
+ * Subsequent requests will use this token so all API calls are scoped to that org.
+ */
+export const setExchangedToken = (token: string) =>
+  sessionStorage.setItem(TOKEN_KEY, token);
+
 // ---------------------------------------------------------------------------
 // No-op shim so existing call-sites that call setHttpRequestFn(httpRequest)
 // continue to compile without changes.
@@ -72,6 +79,8 @@ export const setHttpRequestFn = (_fn: unknown) => { /* no-op in platform mode */
 
 /**
  * Default headers — adds Authorization if a token is stored.
+ * The org context is carried in the token itself (organization JWT claim),
+ * so no extra org header is needed.
  */
 const buildHeaders = (extra?: Record<string, string>): Record<string, string> => {
   const h: Record<string, string> = {

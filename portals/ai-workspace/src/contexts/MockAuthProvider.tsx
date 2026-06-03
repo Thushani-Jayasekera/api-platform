@@ -18,27 +18,13 @@
 
 import React, { useCallback, useMemo, useState } from 'react';
 import { AppAuthContext, type AppUser } from './AppAuthContext';
-import { MOCK_USERS } from '../auth/mockUsers.config';
 import { ROLE_SCOPES, expandScopes, checkPermission } from '../auth/permissions';
 import { clearAuthData } from '../auth/logout';
 import { setStoredToken, clearStoredToken } from '../clients/choreoApiClient';
-import { DEV_ORG_ID } from '../config.env';
+import { buildSignedJwt } from '../auth/noAuthJwt';
+import type { FileBasedAuthConfig } from '../config/appConfig';
 
 const MOCK_SESSION_KEY = 'mock_auth_user';
-
-function base64UrlEncode(str: string): string {
-  const bytes = new TextEncoder().encode(str);
-  let binary = '';
-  bytes.forEach((b) => (binary += String.fromCharCode(b)));
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-function createMockJwt(payload: Record<string, unknown>): string {
-  const header = base64UrlEncode(JSON.stringify({ typ: 'JWT', alg: 'none' }));
-  const body = base64UrlEncode(JSON.stringify(payload));
-  // alg:none JWTs have an empty signature segment
-  return `${header}.${body}.`;
-}
 
 function loadStoredUser(): AppUser | null {
   try {
@@ -50,7 +36,13 @@ function loadStoredUser(): AppUser | null {
   }
 }
 
-export function MockAuthProvider({ children }: { children: React.ReactNode }) {
+export function MockAuthProvider({
+  config,
+  children,
+}: {
+  config: FileBasedAuthConfig;
+  children: React.ReactNode;
+}) {
   const [user, setUser] = useState<AppUser | null>(loadStoredUser);
   const [mockToken, setMockToken] = useState<string | null>(
     () => sessionStorage.getItem('platform_auth_token')
@@ -58,7 +50,7 @@ export function MockAuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (credentials?: { username: string; password: string }) => {
     if (!credentials) return;
-    const match = MOCK_USERS.find(
+    const match = config.users.find(
       (u) => u.username === credentials.username && u.password === credentials.password
     );
     if (!match) throw new Error('Invalid username or password');
@@ -71,17 +63,19 @@ export function MockAuthProvider({ children }: { children: React.ReactNode }) {
       scopes,
     };
     const iat = Math.floor(Date.now() / 1000);
-    const mockToken = createMockJwt({
+    const mockToken = await buildSignedJwt({
       iss: 'mock-auth',
       sub: match.username,
       given_name: match.name,
       email: match.email,
-      platform_role: match.role,
-      organization: DEV_ORG_ID,
+      role: match.role,
+      organization: config.org.id,
+      org_name: config.org.name,
+      org_handle: config.org.handle,
       scope: scopes.join(' '),
       iat,
       exp: iat + 86400,
-    });
+    }, config.jwtSecret);
     setStoredToken(mockToken);
     setMockToken(mockToken);
     sessionStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(appUser));

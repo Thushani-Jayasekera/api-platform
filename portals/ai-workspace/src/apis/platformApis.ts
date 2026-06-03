@@ -156,6 +156,33 @@ export async function getOrganization(): Promise<PlatformOrganization> {
 }
 
 /**
+ * Add a user to an organization with a given role.
+ *
+ * Endpoint: POST /organizations/:organizationId/members
+ * Auth:     Bearer token — caller's org claim must match organizationId.
+ *
+ * Idempotent: the backend uses INSERT OR IGNORE, so re-calling for an existing
+ * member is safe.
+ */
+export async function addOrgMember(
+  organizationId: string,
+  userId: string,
+  role: string,
+): Promise<void> {
+  const response = await fetch(platformUrl(`/organizations/${organizationId}/members`), {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ userId, role }),
+  });
+
+  if (!response.ok && response.status !== 409) {
+    const message = await parseErrorMessage(response);
+    logger.error('addOrgMember failed:', response.status, message);
+    throw new Error(`Failed to add org member: ${message}`);
+  }
+}
+
+/**
  * Check if an organization exists by UUID (HEAD request).
  *
  * Endpoint: HEAD /organizations/{organizationId}

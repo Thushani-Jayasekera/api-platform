@@ -1,4 +1,7 @@
 node_modules
 dist
 .env
+.env.local
 .vscode
+# un-ignore the mock dev config — it has no secrets
+!.env.mock

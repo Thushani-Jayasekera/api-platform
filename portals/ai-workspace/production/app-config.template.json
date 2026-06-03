@@ -1,0 +1,69 @@
+{
+  "_comment": "Production template — copy to app-config.json and fill in your IDP values. Mount at /app/app-config.json in the container.",
+  "devMode": false,
+  "auth": {
+    "enabled": true,
+    "idp": {
+      "enabled": true,
+      "authority": "https://api.asgardeo.io/t/<YOUR_ORG>/oauth2/token",
+      "clientId": "<YOUR_CLIENT_ID>",
+      "redirectUri": "https://<YOUR_DOMAIN>/signin",
+      "postLogoutRedirectUri": "https://<YOUR_DOMAIN>/login",
+      "endSessionEndpoint": "",
+      "scopes": [
+        "openid", "profile", "email",
+        "api-platform:project:manage",
+        "api-platform:application:manage",
+        "api-platform:application:api_key:manage",
+        "api-platform:application:associations:manage",
+        "api-platform:gateway:manage",
+        "api-platform:gateway:token:manage",
+        "api-platform:gateway:policy:manage",
+        "api-platform:gateway:artifacts:read",
+        "api-platform:gateway:manifest:read",
+        "api-platform:gateway:status:read",
+        "api-platform:llm_provider:manage",
+        "api-platform:llm_provider:api_key:manage",
+        "api-platform:llm_provider:deployment:manage",
+        "api-platform:llm_proxy:manage",
+        "api-platform:llm_proxy:api_key:manage",
+        "api-platform:llm_proxy:deployment:manage",
+        "api-platform:llm_template:manage",
+        "api-platform:mcp_proxy:manage",
+        "api-platform:mcp_proxy:deployment:manage",
+        "api-platform:devportal:manage",
+        "api-platform:subscription:manage",
+        "api-platform:subscription_plan:manage",
+        "api-platform:rest_api:manage",
+        "api-platform:rest_api:api_key:manage",
+        "api-platform:rest_api:deployment:manage",
+        "api-platform:websub_api:manage",
+        "api-platform:websub_api:deployment:manage",
+        "api-platform:webbroker_api:manage",
+        "api-platform:webbroker_api:deployment:manage",
+        "api-platform:git:read"
+      ],
+      "claims": {
+        "organization": "organization",
+        "username": "given_name",
+        "email": "email",
+        "orgName": "org_name",
+        "orgHandle": "org_handle"
+      },
+      "idpHints": {
+        "param": "fidp",
+        "google": "google",
+        "github": "github",
+        "microsoft": "microsoft",
+        "enterprise": "EnterpriseIDP"
+      },
+      "tokenExchange": { "enabled": true }
+    },
+    "fileBasedAuth": {
+      "enabled": false,
+      "org": { "id": "", "name": "", "handle": "" },
+      "users": [],
+      "tokenExchange": { "enabled": false }
+    }
+  }
+}
