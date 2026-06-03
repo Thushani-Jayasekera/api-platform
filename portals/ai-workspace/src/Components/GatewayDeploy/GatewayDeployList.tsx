@@ -32,7 +32,7 @@ interface GatewayDeployListProps {
 
 /**
  * List of hybrid gateways with search and expandable cards.
- * Duplicated from choreo-console HybridGatewayList, adapted for oxygen-ui.
+ * Duplicated from ai-workspace HybridGatewayList, adapted for oxygen-ui.
  */
 export default function GatewayDeployList({
   searchQuery,

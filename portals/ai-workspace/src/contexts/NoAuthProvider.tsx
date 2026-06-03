@@ -20,7 +20,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AppAuthContext, type AppUser } from './AppAuthContext';
 import { ROLE_SCOPES, expandScopes, checkPermission } from '../auth/permissions';
 import { buildNoAuthJwt } from '../auth/noAuthJwt';
-import { setStoredToken } from '../clients/choreoApiClient';
+import { setStoredToken } from '../clients/aiWorkspaceApiClient';
 import type { FileBasedAuthConfig } from '../config/appConfig';
 
 /**

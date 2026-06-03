@@ -73,8 +73,8 @@ import ExternalServersDeploy from './pages/appShell/appShellPages/externalServer
 import EditExternalServer from './pages/appShell/appShellPages/externalServers/EditExternalServer';
 import { MCPServerValidationProvider } from './contexts/MCP';
 import { LLMProvidersProvider } from './contexts/llmProvider';
-import { ChoreoUserProvider, useChoreoUser } from './contexts/ChoreoUserContext';
-import { setStoredToken } from './clients/choreoApiClient';
+import { AIWorkspaceUserProvider, useAIWorkspaceUser } from './contexts/AIWorkspaceUserContext';
+import { setStoredToken } from './clients/aiWorkspaceApiClient';
 import { useAppAuth } from './contexts/AppAuthContext';
 import { useAppConfig } from './config/AppConfigContext';
 import { addOrgMember } from './apis/platformApis';
@@ -159,7 +159,7 @@ function SigninCallbackRoute() {
 // Runs once after sign-in to fetch the access token and load organizations.
 function PostSignInInit({ children }: { children: React.ReactNode }) {
   const { accessToken } = useAppAuth();
-  const { getOrganizations, setOrganizations, setIsTokenExchanged, isTokenExchanged } = useChoreoUser();
+  const { getOrganizations, setOrganizations, setIsTokenExchanged, isTokenExchanged } = useAIWorkspaceUser();
   const navigate = useNavigate();
   const { auth } = useAppConfig();
   const { idp: { claims }, fileBasedAuth } = auth;
@@ -270,7 +270,7 @@ function WithPageBoundary({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <ChoreoUserProvider>
+      <AIWorkspaceUserProvider>
       <Routes>
         {/* OAuth callback — Thunder redirects here, Callback forwards code back to origin */}
         <Route path="/signin" element={<SigninCallbackRoute />} />
@@ -753,7 +753,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      </ChoreoUserProvider>
+      </AIWorkspaceUserProvider>
     </BrowserRouter>
   );
 }

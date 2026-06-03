@@ -20,7 +20,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { AppAuthContext, type AppUser } from './AppAuthContext';
 import { ROLE_SCOPES, expandScopes, checkPermission } from '../auth/permissions';
 import { clearAuthData } from '../auth/logout';
-import { setStoredToken, clearStoredToken } from '../clients/choreoApiClient';
+import { setStoredToken, clearStoredToken } from '../clients/aiWorkspaceApiClient';
 import { buildSignedJwt } from '../auth/noAuthJwt';
 import type { FileBasedAuthConfig } from '../config/appConfig';
 

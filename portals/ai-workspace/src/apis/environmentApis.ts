@@ -16,7 +16,7 @@
  * under the License.
  */
 
-import { get } from '../clients/choreoApiClient';
+import { get } from '../clients/aiWorkspaceApiClient';
 import { API_BASE_URLS } from '../config.env';
 
 export interface EnvironmentTemplate {

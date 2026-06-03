@@ -16,7 +16,7 @@
  * under the License.
  */
 
-import { post } from '../../clients/choreoApiClient';
+import { post } from '../../clients/aiWorkspaceApiClient';
 import { logger } from '../../utils/logger';
 
 import type {

@@ -36,7 +36,7 @@ import React, {
 import { logger } from '../utils/logger';
 import { getProjects } from '../apis/projectApis';
 import type { Organization, ProjectBase } from '../utils/types';
-import { useChoreoUser } from './ChoreoUserContext';
+import { useAIWorkspaceUser } from './AIWorkspaceUserContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -90,7 +90,7 @@ export const AppShellProvider: React.FC<AppShellProviderProps> = ({
   userName: initialUserName,
   userEmail: initialUserEmail,
 }) => {
-  const { setIsTokenExchanged, getOrganizations, setOrganizations, exchangeOrgToken } = useChoreoUser();
+  const { setIsTokenExchanged, getOrganizations, setOrganizations, exchangeOrgToken } = useAIWorkspaceUser();
 
   const isInitializedRef = useRef(false);
   const isOrgChangeInProgressRef = useRef(false);

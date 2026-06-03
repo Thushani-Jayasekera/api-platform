@@ -17,7 +17,7 @@
  */
 
 // ============================================================================
-// ChoreoUserContext — Platform API (standalone) version
+// AIWorkspaceUserContext — Platform API (standalone) version
 // ----------------------------------------------------------------------------
 // Asgardeo authentication has been removed. All org data comes from the
 // Platform API (https://localhost:9243/api/v1).
@@ -34,12 +34,12 @@ import React, {
 import { logger } from '../utils/logger';
 import type { Organization, ValidateUserResponse } from '../utils/types';
 import { PLATFORM_API_BASE_URL } from '../config.env';
-import { getOrgToken, getStoredToken, setExchangedToken } from '../clients/choreoApiClient';
+import { getOrgToken, getStoredToken, setExchangedToken } from '../clients/aiWorkspaceApiClient';
 import { useAppConfig } from '../config/AppConfigContext';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export interface ChoreoUserContextType {
+export interface AIWorkspaceUserContextType {
   isTokenExchanged: boolean;
   setIsTokenExchanged: React.Dispatch<React.SetStateAction<boolean>>;
   organizations: Organization[];
@@ -60,7 +60,7 @@ export interface ChoreoUserContextType {
   getIsOrgAdmin: (orgHandle: string) => Promise<boolean>;
 }
 
-const ChoreoUserContext = createContext<ChoreoUserContextType | null>(null);
+const AIWorkspaceUserContext = createContext<AIWorkspaceUserContextType | null>(null);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -81,7 +81,7 @@ async function fetchPlatformOrganizations(retries = 5, baseDelayMs = 2000): Prom
   for (let attempt = 0; attempt <= retries; attempt++) {
     if (attempt > 0) {
       await new Promise(r => setTimeout(r, baseDelayMs * attempt));
-      logger.info('[ChoreoUserContext] Retrying GET /users/me/organizations (attempt %d/%d)', attempt, retries);
+      logger.info('[AIWorkspaceUserContext] Retrying GET /users/me/organizations (attempt %d/%d)', attempt, retries);
     }
     try {
       const res = await fetch(`${PLATFORM_API_BASE_URL}/users/me/organizations`, { headers });
@@ -89,7 +89,7 @@ async function fetchPlatformOrganizations(retries = 5, baseDelayMs = 2000): Prom
       if (!res.ok) {
         // Treat 404 or 500 as "no orgs yet" — don't retry, send to /register-org.
         if (res.status === 404 || res.status === 500) {
-          logger.warn('[ChoreoUserContext] No organizations found (HTTP %d) — register one at /register-org', res.status);
+          logger.warn('[AIWorkspaceUserContext] No organizations found (HTTP %d) — register one at /register-org', res.status);
           return [];
         }
         const body = await res.json().catch(() => ({}));
@@ -99,11 +99,11 @@ async function fetchPlatformOrganizations(retries = 5, baseDelayMs = 2000): Prom
       const platformOrgs: Array<{ id: string; handle: string; name: string; region: string }> = await res.json();
 
       if (!platformOrgs || platformOrgs.length === 0) {
-        logger.info('[ChoreoUserContext] No organizations found for user');
+        logger.info('[AIWorkspaceUserContext] No organizations found for user');
         return [];
       }
 
-      logger.info('[ChoreoUserContext] Loaded organizations:', platformOrgs.length);
+      logger.info('[AIWorkspaceUserContext] Loaded organizations:', platformOrgs.length);
 
       return platformOrgs.map((o) => ({
         id: o.id,
@@ -115,7 +115,7 @@ async function fetchPlatformOrganizations(retries = 5, baseDelayMs = 2000): Prom
       }));
     } catch (err) {
       lastErr = err;
-      logger.warn('[ChoreoUserContext] GET /users/me/organizations failed (attempt %d): %o', attempt, err);
+      logger.warn('[AIWorkspaceUserContext] GET /users/me/organizations failed (attempt %d): %o', attempt, err);
     }
   }
   throw lastErr;
@@ -123,7 +123,7 @@ async function fetchPlatformOrganizations(retries = 5, baseDelayMs = 2000): Prom
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
-export const ChoreoUserProvider: React.FC<{ children: ReactNode }> = ({
+export const AIWorkspaceUserProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
   const { auth } = useAppConfig();
@@ -141,10 +141,10 @@ export const ChoreoUserProvider: React.FC<{ children: ReactNode }> = ({
   // Skipped for file-based/no-auth modes — the locally-built JWT already carries the org claim.
   const exchangeOrgToken = useCallback(async (orgId: string): Promise<boolean> => {
     if (!tokenExchangeEnabled) {
-      logger.info('[ChoreoUserContext] Token exchange disabled — skipping for org', orgId);
+      logger.info('[AIWorkspaceUserContext] Token exchange disabled — skipping for org', orgId);
       return true;
     }
-    logger.info('[ChoreoUserContext] Requesting org-scoped token for org', orgId);
+    logger.info('[AIWorkspaceUserContext] Requesting org-scoped token for org', orgId);
     try {
       const res = await fetch(`${PLATFORM_API_BASE_URL}/auth/token`, {
         method: 'POST',
@@ -155,22 +155,22 @@ export const ChoreoUserProvider: React.FC<{ children: ReactNode }> = ({
         body: JSON.stringify({ orgId }),
       });
       if (!res.ok) {
-        logger.error('[ChoreoUserContext] Token exchange failed for org', orgId, 'status', res.status);
+        logger.error('[AIWorkspaceUserContext] Token exchange failed for org', orgId, 'status', res.status);
         return false;
       }
       const data: { token: string } = await res.json();
       setExchangedToken(data.token);
-      logger.info('[ChoreoUserContext] Org-scoped token stored for org', orgId);
+      logger.info('[AIWorkspaceUserContext] Org-scoped token stored for org', orgId);
       return true;
     } catch (err) {
-      logger.error('[ChoreoUserContext] Token exchange error:', err);
+      logger.error('[AIWorkspaceUserContext] Token exchange error:', err);
       return false;
     }
   }, [tokenExchangeEnabled]);
 
   // Not used in platform mode
   const validateUser = useCallback(async (): Promise<ValidateUserResponse> => {
-    logger.info('[ChoreoUserContext] validateUser — no-op in platform mode');
+    logger.info('[AIWorkspaceUserContext] validateUser — no-op in platform mode');
     return { organizations: [], idpId: '' };
   }, []);
 
@@ -185,7 +185,7 @@ export const ChoreoUserProvider: React.FC<{ children: ReactNode }> = ({
   }, []);
 
   return (
-    <ChoreoUserContext.Provider
+    <AIWorkspaceUserContext.Provider
       value={{
         isTokenExchanged,
         setIsTokenExchanged,
@@ -202,14 +202,14 @@ export const ChoreoUserProvider: React.FC<{ children: ReactNode }> = ({
       }}
     >
       {children}
-    </ChoreoUserContext.Provider>
+    </AIWorkspaceUserContext.Provider>
   );
 };
 
-export const useChoreoUser = (): ChoreoUserContextType => {
-  const ctx = useContext(ChoreoUserContext);
-  if (!ctx) throw new Error('useChoreoUser must be used within a ChoreoUserProvider');
+export const useAIWorkspaceUser = (): AIWorkspaceUserContextType => {
+  const ctx = useContext(AIWorkspaceUserContext);
+  if (!ctx) throw new Error('useAIWorkspaceUser must be used within a AIWorkspaceUserProvider');
   return ctx;
 };
 
-export default ChoreoUserContext;
+export default AIWorkspaceUserContext;

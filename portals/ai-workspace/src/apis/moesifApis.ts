@@ -16,7 +16,7 @@
  * under the License.
  */
 
-import { get, post } from '../clients/choreoApiClient';
+import { get, post } from '../clients/aiWorkspaceApiClient';
 import { API_BASE_URLS } from '../config.env';
 import type { MoesifTokenResponse } from '../utils/types';
 import { logger } from '../utils/logger';

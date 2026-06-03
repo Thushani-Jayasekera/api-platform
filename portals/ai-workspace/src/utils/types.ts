@@ -156,7 +156,7 @@ export enum ProjectTypeResponse {
 
 /**
  * Base project information
- * This matches the ProjectBase type from choreo-console
+ * This matches the ProjectBase type from ai-workspace
  */
 export interface ProjectBase {
   id: string;

@@ -25,7 +25,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { get } from '../clients/choreoApiClient';
+import { get } from '../clients/aiWorkspaceApiClient';
 import { useAppAuth } from './AppAuthContext';
 import { API_BASE_URLS } from '../config.env';
 import type { MoesifTokenResponse } from '../utils/types';

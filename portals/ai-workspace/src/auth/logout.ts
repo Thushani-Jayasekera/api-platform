@@ -16,7 +16,7 @@
  * under the License.
  */
 
-import { clearStoredToken } from '../clients/choreoApiClient';
+import { clearStoredToken } from '../clients/aiWorkspaceApiClient';
 import { logger } from '../utils/logger';
 
 type SignOutFunction = () => Promise<void>;

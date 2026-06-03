@@ -16,7 +16,7 @@
  * under the License.
  */
 
-const FIDP_COOKIE_KEY = 'choreo_fidp_id';
+const FIDP_COOKIE_KEY = 'aiworkspace_fidp_id';
 
 /**
  * Get a cookie value by name

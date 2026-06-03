@@ -17,7 +17,7 @@
  */
 
 import { PLATFORM_API_BASE_URL } from '../config.env';
-import { getStoredToken, getOrgToken } from '../clients/choreoApiClient';
+import { getStoredToken, getOrgToken } from '../clients/aiWorkspaceApiClient';
 import { logger } from '../utils/logger';
 
 // ============================================================================
@@ -35,7 +35,7 @@ import { logger } from '../utils/logger';
  *   --insecure
  *
  * TODO: [REMOVE BEFORE PRODUCTION] Bearer token is currently hardcoded in
- *       choreoApiClient.ts (DEV_FALLBACK_TOKEN). Replace with proper auth.
+ *       aiWorkspaceApiClient.ts (DEV_FALLBACK_TOKEN). Replace with proper auth.
  */
 export interface PlatformOrganization {
   /** UUID v4 — client-generated and sent on registration */

@@ -190,5 +190,5 @@ export const graphqlQuery = async <T>(
 };
 
 /** Backwards-compat default export */
-const choreoApiClient = { request, get, post, put, del, patch, graphqlQuery };
-export default choreoApiClient;
+const aiWorkspaceApiClient = { request, get, post, put, del, patch, graphqlQuery };
+export default aiWorkspaceApiClient;

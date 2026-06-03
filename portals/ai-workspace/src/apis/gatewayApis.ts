@@ -11,7 +11,7 @@
  * associated services.
  */
 
-import { get, post, del } from '../clients/choreoApiClient';
+import { get, post, del } from '../clients/aiWorkspaceApiClient';
 import { PLATFORM_API_BASE_URL } from '../config.env';
 import { logger } from '../utils/logger';
 import type {

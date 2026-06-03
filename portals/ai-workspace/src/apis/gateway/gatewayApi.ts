@@ -21,7 +21,7 @@ import {
   post,
   put,
   del,
-} from '../../clients/choreoApiClient';
+} from '../../clients/aiWorkspaceApiClient';
 import { PLATFORM_API_BASE_URL } from '../../config.env';
 import {
   RegisterGatewayRequest,

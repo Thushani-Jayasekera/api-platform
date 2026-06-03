@@ -23,7 +23,7 @@ import { PERMISSION_MODE } from '../config.env';
 import { expandScopes, ROLE_SCOPES, checkPermission, isPlatformRole } from '../auth/permissions';
 import type { PlatformRole } from '../auth/permissions';
 import { handleLogout } from '../auth/logout';
-import { setStoredToken } from '../clients/choreoApiClient';
+import { setStoredToken } from '../clients/aiWorkspaceApiClient';
 import { useAppConfig } from '../config/AppConfigContext';
 
 function decodeJwtPayload(token: string): Record<string, unknown> {
