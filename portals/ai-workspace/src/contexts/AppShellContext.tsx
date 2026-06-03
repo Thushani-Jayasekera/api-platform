@@ -119,8 +119,6 @@ export const AppShellProvider: React.FC<AppShellProviderProps> = ({
       return projectList;
     } catch (err) {
       logger.error('Failed to fetch projects:', err);
-      // Non-fatal — workspace can still load without projects
-      setProjectsForCurrentOrganization([]);
       return [];
     } finally {
       setIsProjectsLoading(false);
@@ -137,6 +135,7 @@ export const AppShellProvider: React.FC<AppShellProviderProps> = ({
       isOrgChangeInProgressRef.current = true;
       setCurrentOrganizationState(org);
       setCurrentProjectState(null);
+      setProjectsForCurrentOrganization([]);
       setError(null);
 
       try {
