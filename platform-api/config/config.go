@@ -263,13 +263,6 @@ type CORS struct {
 }
 
 // JWT holds configuration for local asymmetric (RS256) JWT authentication.
-// Active when Auth.Mode is AuthModeExternalToken (verify-only, externally-minted
-// tokens) or AuthModeFile (file mode also issues these tokens). Signature
-// validation is always on and strictly asymmetric — symmetric (HMAC) and
-// unsigned ("none") algorithms are rejected.
-//
-// TODO(pqc): migrate — RS256 is quantum-vulnerable. Move to an ML-DSA (FIPS 204)
-// signature once a Go JWT library exposes it. See post-quantum-cryptography.md.
 type JWT struct {
 	// PublicKeyFile is the path to a mounted PEM-encoded RSA public key file,
 	// used to verify token signatures. Required in both "external_token" and
