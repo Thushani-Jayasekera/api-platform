@@ -43,8 +43,15 @@ func defaultConfig() *Server {
 		Auth: Auth{
 			// Default mode verifies locally-issued, asymmetrically-signed (RS256) JWTs;
 			// the quickstart config selects "file" to add username/password login on top.
-			Mode:            AuthModeExternalToken,
-			ScopeValidation: true,
+			Mode: AuthModeInternalToken,
+			Authorization: Authorization{
+				Enabled: true,
+				Mode:    AuthzModeScope,
+				// RoleMappings is left empty on purpose: the mapping file is
+				// operator-owned and mounted (the packs ship a sample), so a
+				// built-in path would make startup depend on a file the image
+				// does not carry. The shipped config.toml points at the mount.
+			},
 			// SkipPaths bypasses JWT/IDP auth middleware. Paths below the health/metrics
 			// probes are internal gateway routes authenticated via gateway token instead.
 			SkipPaths: []string{
@@ -69,9 +76,6 @@ func defaultConfig() *Server {
 				Issuer:   "platform-api",
 				TokenTTL: time.Hour,
 			},
-			IDP: IDP{
-				ValidationMode: "scope",
-			},
 			ClaimMappings: ClaimMappings{
 				Organization: "organization",
 				OrgName:      "org_name",
@@ -80,6 +84,11 @@ func defaultConfig() *Server {
 				Username:     "username",
 				Email:        "email",
 				Scope:        "scope",
+				// Default to the flat "roles" claim — what Asgardeo and Entra ID
+				// emit, and what the file-mode login endpoint signs — so switching
+				// auth.authorization.mode to "role" needs no extra claim wiring.
+				// Keycloak overrides it with "realm_access.roles".
+				Roles: "roles",
 			},
 			File: FileBased{
 				Organization: FileBasedOrg{
@@ -89,13 +98,12 @@ func defaultConfig() *Server {
 					// UUID left empty: seedFileBasedOrg generates one at startup
 					// unless an operator pins it via config/env for a stable org.
 				},
-				Users: FileBasedUsers{
-					{
-						Username:     "admin",
-						PasswordHash: "$2y$10$U2yKMwGamGwDoMu0hRPT7u8nCuP8z/qxHFOKV6dhIxkJN9NJ0eVQ.",
-						Scopes:       "ap:organization:manage ap:gateway:manage ap:gateway_custom_policy:manage ap:rest_api:manage ap:llm_provider:manage ap:llm_proxy:manage ap:mcp_proxy:manage ap:webbroker_api:manage ap:websub_api:manage ap:application:manage ap:subscription:manage ap:subscription_plan:manage ap:project:manage ap:llm_template:manage ap:devportal:manage ap:api_key:read ap:secret:manage",
-					},
-				},
+				// Users is deliberately empty: no admin credential is ever
+				// compiled in or shipped. In auth.mode=file, validation refuses
+				// to start until the operator configures at least one user (the
+				// shipped config.toml requires APIP_CP_ADMIN_USERNAME /
+				// APIP_CP_ADMIN_PASSWORD_HASH), so a fresh install can never come
+				// up with a known default login.
 			},
 		},
 		Deployments: Deployments{
