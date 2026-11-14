@@ -776,6 +776,11 @@ components:
           example: /my-websub-api
         upstream:
           type: object
+          description: |
+            Upstream endpoint configuration. `auth.value` is write-only: supply
+            it when configuring the API, and it is not returned on reads. Send
+            an auth block with an empty or omitted value to keep the stored
+            credential; send a new value to replace it.
           x-go-type: Upstream
         allChannels:
           $ref: '#/components/schemas/WebSubAllChannelPolicies'
