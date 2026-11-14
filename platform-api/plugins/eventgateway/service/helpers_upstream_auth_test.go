@@ -257,3 +257,39 @@ func TestWebSubAPIService_UpdateDoesNotClearTheStoredCredential(t *testing.T) {
 		t.Errorf("update wiped the stored credential: got %v, want %q", savedAuth, storedCredential)
 	}
 }
+
+// nil and "" both mean "unchanged" — a client may round-trip either the
+// omitted field or an explicit empty string, and neither drops the credential.
+func TestPreserveWebSubUpstreamAuth_NilAndEmptyValueAreEquivalent(t *testing.T) {
+	withNil := preserveWebSubUpstreamAuth(storedUpstreamConfig(), api.Upstream{
+		Main: api.UpstreamDefinition{Auth: &api.UpstreamAuth{Type: authTypePtr(api.ApiKey)}},
+	})
+	withEmpty := preserveWebSubUpstreamAuth(storedUpstreamConfig(), api.Upstream{
+		Main: api.UpstreamDefinition{Auth: &api.UpstreamAuth{
+			Type:  authTypePtr(api.ApiKey),
+			Value: utils.StringPtrIfNotEmpty(""),
+		}},
+	})
+
+	for name, got := range map[string]api.Upstream{"nil value": withNil, "empty value": withEmpty} {
+		if got.Main.Auth.Value == nil || *got.Main.Auth.Value != storedCredential {
+			t.Errorf("%s did not preserve the stored credential: got %v", name, got.Main.Auth.Value)
+		}
+	}
+}
+
+// Clearing a credential is explicit: switch the auth type (the contract
+// provides "none" for exactly this). Absence of the value field never clears.
+func TestPreserveWebSubUpstreamAuth_TypeNoneClearsTheCredential(t *testing.T) {
+	updated := preserveWebSubUpstreamAuth(storedUpstreamConfig(), api.Upstream{
+		Main: api.UpstreamDefinition{Auth: &api.UpstreamAuth{Type: authTypePtr(api.None)}},
+	})
+
+	saved := mapUpstreamAPIToModel(updated)
+	if saved.Main.Auth.Value != "" {
+		t.Errorf("auth type none must drop the stored credential: got %q", saved.Main.Auth.Value)
+	}
+	if saved.Main.Auth.Type != string(api.None) {
+		t.Errorf("auth type not applied: got %q", saved.Main.Auth.Type)
+	}
+}
